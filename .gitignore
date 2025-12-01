@@ -1,0 +1,14 @@
+# Generated files
+output/
+scripts/import.sh
+terraform/*.tf
+
+# Terraform state
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate*
+terraform/*.tfplan
+
+# Python
+__pycache__/
+*.py[cod]
