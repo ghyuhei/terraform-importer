@@ -21,22 +21,17 @@
 ## クイックスタート
 
 ```bash
-# AWS認証設定
-aws configure
-
-# 全自動実行
 ./scripts/run_all.sh --region ap-northeast-1
 ```
 
-**注意**: `output/`、`terraform/`、`terraform-modules/`内のファイルは実行時に自動生成・上書きされます。手動削除は不要です。
-
-実行内容:
+**実行内容**:
 1. AWSリソース取得
-2. フラットなTerraformコード生成
-3. Terraform初期化
-4. インポートスクリプト生成・実行
-5. **モジュール構造への変換**
-6. モジュールの検証
+2. Terraformコード生成（フラット構造）
+3. リソースインポート
+4. **モジュール構造への変換**
+5. 検証（`terraform plan`）
+
+**注意**: `output/`、`terraform/`、`terraform-modules/`は自動生成されます。手動削除不要。
 
 ## 手動実行
 
@@ -44,38 +39,26 @@ aws configure
 # 1. リソース取得
 AWS_REGION=ap-northeast-1 ./scripts/fetch_aws_resources.sh
 
-# 2. フラットなTerraformコード生成
+# 2. Terraformコード生成
 python3 scripts/generate_terraform.py --region ap-northeast-1
 
-# 3. 初期化とインポート
+# 3. インポート
 cd terraform && terraform init && cd ..
 python3 scripts/generate_import_commands.py
 ./scripts/import.sh
 
-# 4. モジュール構造生成
+# 4. モジュール化
 python3 scripts/generate_modules.py
-
-# 5. モジュール検証
 cd terraform-modules && terraform init && terraform validate && terraform plan
 ```
 
 ## オプション
 
 ```bash
-# インポートをスキップ
-./scripts/run_all.sh --skip-import
-
-# モジュール化をスキップ
-./scripts/run_all.sh --skip-modules
-
-# 両方スキップ（コード生成のみ）
-./scripts/run_all.sh --skip-import --skip-modules
-
-# リージョン指定
-./scripts/run_all.sh --region us-east-1
-
-# ヘルプ
-./scripts/run_all.sh --help
+./scripts/run_all.sh --region us-east-1        # リージョン指定
+./scripts/run_all.sh --skip-import             # インポートスキップ
+./scripts/run_all.sh --skip-modules            # モジュール化スキップ
+./scripts/run_all.sh --help                    # ヘルプ表示
 ```
 
 ## 必要なIAM権限

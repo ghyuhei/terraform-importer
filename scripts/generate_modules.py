@@ -5,11 +5,7 @@ Terraform Module Generator
 Converts flat Terraform configuration into modular structure following best practices.
 """
 
-import json
-import os
-import re
 from pathlib import Path
-from typing import Any
 
 # Constants
 DEFAULT_INPUT_DIR = './terraform'
