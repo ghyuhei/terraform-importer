@@ -2,12 +2,17 @@
 output/
 scripts/import.sh
 terraform/*.tf
+terraform-modules/
 
 # Terraform state
 terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/terraform.tfstate*
 terraform/*.tfplan
+terraform-modules/.terraform/
+terraform-modules/.terraform.lock.hcl
+terraform-modules/terraform.tfstate*
+terraform-modules/*.tfplan
 
 # Python
 __pycache__/
