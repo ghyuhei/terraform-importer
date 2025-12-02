@@ -1,6 +1,6 @@
 # AWS Transit Gateway Terraform Importer
 
-既存のAWS Transit Gatewayリソースを検出し、Terraformコードとインポートコマンドを自動生成します。
+既存のAWS Transit Gatewayリソースを検出し、Terraformコードとインポートコマンドを自動生成します。さらに、ベストプラクティスに則ったモジュール構造への変換も自動化します。
 
 ## 対応リソース
 
@@ -21,14 +21,17 @@
 ## クイックスタート
 
 ```bash
-# AWS認証設定
-aws configure
-
-# 全自動実行
 ./scripts/run_all.sh --region ap-northeast-1
 ```
 
-**注意**: `output/`と`terraform/`内のファイルは実行時に自動生成・上書きされます。手動削除は不要です。
+**実行内容**:
+1. AWSリソース取得
+2. Terraformコード生成（フラット構造）
+3. リソースインポート
+4. **モジュール構造への変換**
+5. 検証（`terraform plan`）
+
+**注意**: `output/`、`terraform/`、`terraform-modules/`は自動生成されます。手動削除不要。
 
 ## 手動実行
 
@@ -36,29 +39,26 @@ aws configure
 # 1. リソース取得
 AWS_REGION=ap-northeast-1 ./scripts/fetch_aws_resources.sh
 
-# 2. コード生成
+# 2. Terraformコード生成
 python3 scripts/generate_terraform.py --region ap-northeast-1
 
-# 3. 初期化とインポート
+# 3. インポート
 cd terraform && terraform init && cd ..
 python3 scripts/generate_import_commands.py
 ./scripts/import.sh
 
-# 4. 検証
-cd terraform && terraform plan
+# 4. モジュール化
+python3 scripts/generate_modules.py
+cd terraform-modules && terraform init && terraform validate && terraform plan
 ```
 
 ## オプション
 
 ```bash
-# コード生成のみ（インポートなし）
-./scripts/run_all.sh --skip-import
-
-# リージョン指定
-./scripts/run_all.sh --region us-east-1
-
-# ヘルプ
-./scripts/run_all.sh --help
+./scripts/run_all.sh --region us-east-1        # リージョン指定
+./scripts/run_all.sh --skip-import             # インポートスキップ
+./scripts/run_all.sh --skip-modules            # モジュール化スキップ
+./scripts/run_all.sh --help                    # ヘルプ表示
 ```
 
 ## 必要なIAM権限
@@ -87,9 +87,19 @@ cd terraform && terraform plan
 実行時に以下のファイルが自動生成されます（既存ファイルは上書き）:
 
 ```
-output/               # AWSリソースJSON
-terraform/*.tf        # Terraformコード
-scripts/import.sh     # インポートコマンド
+output/                              # AWSリソースJSON
+terraform/*.tf                       # フラットなTerraformコード
+scripts/import.sh                    # インポートコマンド
+terraform-modules/                   # モジュール構造
+├── main.tf                          # ルートモジュール
+├── variables.tf                     # ルート変数
+├── outputs.tf                       # ルート出力
+├── versions.tf                      # プロバイダー設定
+└── modules/transit-gateway/         # TGWモジュール
+    ├── main.tf                      # リソース定義
+    ├── variables.tf                 # モジュール変数
+    ├── outputs.tf                   # モジュール出力
+    └── README.md                    # モジュール説明
 ```
 
 ## トラブルシューティング

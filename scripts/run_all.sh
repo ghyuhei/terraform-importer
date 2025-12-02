@@ -4,6 +4,7 @@ set -euo pipefail
 REGION="${AWS_REGION:-ap-northeast-1}"
 OUTPUT_DIR="./output"
 TERRAFORM_DIR="./terraform"
+MODULE_DIR="./terraform-modules"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
@@ -52,14 +53,43 @@ verify_state() {
     cd "$TERRAFORM_DIR" && terraform plan
 }
 
+generate_modules() {
+    log "Generating Terraform modules..."
+    cd "$PROJECT_ROOT" && python3 "$SCRIPT_DIR/generate_modules.py" \
+        --input-dir "$TERRAFORM_DIR" --output-dir "$MODULE_DIR"
+}
+
+init_modules() {
+    log "Initializing module structure..."
+    cd "$MODULE_DIR" && terraform init
+}
+
+verify_modules() {
+    log "Validating module structure..."
+    cd "$MODULE_DIR" && terraform validate
+    log "Running terraform plan on modules..."
+    cd "$MODULE_DIR" && terraform plan
+}
+
 main() {
     SKIP_IMPORT=false
+    SKIP_MODULES=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             --skip-import) SKIP_IMPORT=true; shift ;;
+            --skip-modules) SKIP_MODULES=true; shift ;;
             --region) REGION="$2"; shift 2 ;;
-            --help) echo "Usage: $0 [--region REGION] [--skip-import]"; exit 0 ;;
+            --help)
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --region REGION      AWS region (default: ap-northeast-1)"
+                echo "  --skip-import        Skip resource import step"
+                echo "  --skip-modules       Skip module generation step"
+                echo "  --help               Show this help message"
+                exit 0
+                ;;
             *) echo "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -79,7 +109,17 @@ main() {
         verify_state
     fi
 
+    if [ "$SKIP_MODULES" = false ]; then
+        generate_modules
+        init_modules
+        verify_modules
+    fi
+
     log "Complete!"
+    echo ""
+    echo "Generated directories:"
+    echo "  - Flat Terraform: $TERRAFORM_DIR"
+    [ "$SKIP_MODULES" = false ] && echo "  - Modular Terraform: $MODULE_DIR"
 }
 
 main "$@"
