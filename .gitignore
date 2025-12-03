@@ -1,18 +1,12 @@
-# Generated files
-output/
-scripts/import.sh
-terraform/*.tf
-terraform-modules/
-
-# Terraform state
+# Terraform state and cache
 terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/terraform.tfstate*
 terraform/*.tfplan
-terraform-modules/.terraform/
-terraform-modules/.terraform.lock.hcl
-terraform-modules/terraform.tfstate*
-terraform-modules/*.tfplan
+
+# Environment-specific files (DO NOT COMMIT)
+terraform/terraform.tfvars
+terraform/import.sh
 
 # Python
 __pycache__/
