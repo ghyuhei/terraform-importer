@@ -101,12 +101,17 @@ terraform plan  # "No changes"が理想
 
 ```bash
 cd terraform
+
+# サンプルファイルをコピー
 cp terraform.tfvars.example terraform.tfvars
+
+# エディタで編集
+vim terraform.tfvars
 ```
 
-#### 2. terraform.tfvarsを編集
+#### 2. terraform.tfvarsを実際の環境に合わせて編集
 
-実際の環境に合わせて値を設定します。
+以下のように、実際のVPC IDやサブネットIDに変更します：
 
 ```hcl
 region      = "ap-northeast-1"
@@ -115,8 +120,15 @@ transit_gateway_name = "tgw"
 vpc_attachments = {
   vpc1 = {
     name       = "tgw-attachment-vpc1"
-    vpc_id     = "vpc-xxxxx"  # 実際のVPC IDに変更
-    subnet_ids = ["subnet-xxxxx"]
+    vpc_id     = "vpc-0123456789abcdef0"  # 実際のVPC ID
+    subnet_ids = ["subnet-0123456789abcdef0"]  # 実際のサブネットID
+  }
+}
+
+route_tables = {
+  development = {
+    name = "tgw-rt-development"
+    tags = {}
   }
 }
 
@@ -135,7 +147,7 @@ tgw_routes = {
 # 初期化
 terraform init
 
-# 計画確認
+# 計画確認（新規作成されるリソースを確認）
 terraform plan
 
 # 適用
