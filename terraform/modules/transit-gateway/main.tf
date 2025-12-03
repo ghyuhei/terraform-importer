@@ -78,8 +78,8 @@ resource "aws_ec2_transit_gateway" "this" {
   default_route_table_association = var.transit_gateway_default_route_table_association
   default_route_table_propagation = var.transit_gateway_default_route_table_propagation
   dns_support                     = var.transit_gateway_dns_support
-  vpn_ecmp_support               = var.transit_gateway_vpn_ecmp_support
-  auto_accept_shared_attachments = var.transit_gateway_auto_accept_shared_attachments
+  vpn_ecmp_support                = var.transit_gateway_vpn_ecmp_support
+  auto_accept_shared_attachments  = var.transit_gateway_auto_accept_shared_attachments
 
   tags = merge(
     var.tags,

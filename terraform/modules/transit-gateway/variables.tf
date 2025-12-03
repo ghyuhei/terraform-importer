@@ -90,8 +90,8 @@ variable "vpc_attachments" {
 variable "route_table_associations" {
   description = "Map of route table associations (which attachment uses which route table)"
   type = map(object({
-    route_table_key = string  # Key from route_tables map
-    attachment_key  = string  # Key from vpc_attachments map
+    route_table_key = string # Key from route_tables map
+    attachment_key  = string # Key from vpc_attachments map
   }))
   default = {}
 }
@@ -99,8 +99,8 @@ variable "route_table_associations" {
 variable "route_table_propagations" {
   description = "Map of route table propagations (which route table receives routes from which attachment)"
   type = map(object({
-    route_table_key = string  # Key from route_tables map
-    attachment_key  = string  # Key from vpc_attachments map
+    route_table_key = string # Key from route_tables map
+    attachment_key  = string # Key from vpc_attachments map
   }))
   default = {}
 }
@@ -113,8 +113,8 @@ variable "tgw_routes" {
   description = "Map of Transit Gateway routes (static routes within TGW route tables)"
   type = map(object({
     destination_cidr_block = string
-    route_table_key        = string            # Key from route_tables map
-    attachment_key         = optional(string)  # Key from vpc_attachments map (omit for blackhole routes)
+    route_table_key        = string           # Key from route_tables map
+    attachment_key         = optional(string) # Key from vpc_attachments map (omit for blackhole routes)
     blackhole              = optional(bool, false)
   }))
   default = {}
@@ -123,7 +123,7 @@ variable "tgw_routes" {
 variable "vpc_routes" {
   description = "Map of VPC routes pointing to Transit Gateway"
   type = map(object({
-    route_table_id         = string  # VPC route table ID
+    route_table_id         = string # VPC route table ID
     destination_cidr_block = string
   }))
   default = {}
