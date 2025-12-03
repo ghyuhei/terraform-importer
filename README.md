@@ -4,9 +4,9 @@ AWS Transit Gatewayを管理するためのTerraformモジュールです。既�
 
 ## 特徴
 
+- **自動インポート**: スクリプトで既存リソースを自動検出し、terraform.tfvarsとimport.shを生成
 - **動的リソース管理**: for_eachを使用し、terraform.tfvarsの変更のみでリソースを追加・削除可能
 - **モジュール化**: 再利用可能なモジュール構造
-- **インポート対応**: 既存のAWSリソースを簡単にインポート
 - **変更に強い**: 環境固有の値はterraform.tfvarsで管理
 
 ## ディレクトリ構造
@@ -14,31 +14,97 @@ AWS Transit Gatewayを管理するためのTerraformモジュールです。既�
 ```
 .
 ├── README.md
+├── scripts/
+│   ├── fetch_aws_resources.sh           # AWSリソース情報取得スクリプト
+│   ├── generate_terraform_config.py     # terraform.tfvars自動生成
+│   └── generate_import_commands.py      # import.sh自動生成
+├── output/                              # AWS情報のJSON出力先（自動生成）
 └── terraform/
-    ├── main.tf                      # ルートモジュール
-    ├── variables.tf                 # 変数定義
-    ├── terraform.tfvars             # 環境固有の値（Git管理対象外推奨）
-    ├── terraform.tfvars.example     # 設定例
-    ├── versions.tf                  # Terraform/プロバイダーバージョン
-    ├── outputs.tf                   # 出力値
-    ├── import.sh                    # インポートスクリプト
+    ├── main.tf                          # ルートモジュール
+    ├── variables.tf                     # 変数定義
+    ├── terraform.tfvars                 # 環境固有の値（Git管理対象外）
+    ├── terraform.tfvars.example         # 設定例
+    ├── versions.tf                      # Terraform/プロバイダーバージョン
+    ├── outputs.tf                       # 出力値
+    ├── import.sh                        # インポートスクリプト（自動生成）
     └── modules/
         └── transit-gateway/
-            ├── main.tf              # モジュールのメインロジック
-            ├── variables.tf         # モジュール変数
-            └── outputs.tf           # モジュール出力
+            ├── main.tf                  # モジュールのメインロジック
+            ├── variables.tf             # モジュール変数
+            └── outputs.tf               # モジュール出力
 ```
 
 ## 使い方
 
-### 1. 初期セットアップ
+2つのユースケースがあります：
+
+### ケースA: 既存リソースをインポートする（推奨）
+
+既存のAWS Transit Gatewayリソースを管理下に置く場合の手順です。
+
+#### 1. AWSリソース情報を取得
+
+```bash
+# スクリプトを使って既存リソース情報を自動取得
+cd terraform
+../scripts/fetch_aws_resources.sh
+
+# outputディレクトリにJSON形式で保存されます
+```
+
+#### 2. terraform.tfvarsとimport.shを自動生成
+
+```bash
+# terraform.tfvarsを生成（既存リソースから自動生成）
+python3 ../scripts/generate_terraform_config.py
+
+# import.shを生成（インポートコマンドを自動生成）
+python3 ../scripts/generate_import_commands.py
+```
+
+生成されたファイルを確認・調整してください。
+
+#### 3. Terraformを初期化してインポート実行
+
+```bash
+# 初期化
+terraform init
+
+# インポート実行
+chmod +x import.sh
+./import.sh
+
+# 差分確認（差分がないことを確認）
+terraform plan
+```
+
+#### 4. 差分がある場合は調整
+
+terraform planで差分が表示された場合、terraform.tfvarsを微調整します：
+
+```bash
+# 実際のリソース情報を確認
+terraform state show 'module.transit_gateway.aws_ec2_transit_gateway.this'
+
+# terraform.tfvarsを編集して合わせる
+vim terraform.tfvars
+
+# 再度確認
+terraform plan  # "No changes"が理想
+```
+
+### ケースB: 新規作成する
+
+新しくTransit Gatewayを構築する場合の手順です。
+
+#### 1. 設定ファイルを準備
 
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-### 2. terraform.tfvarsを編集
+#### 2. terraform.tfvarsを編集
 
 実際の環境に合わせて値を設定します。
 
@@ -63,20 +129,7 @@ tgw_routes = {
 }
 ```
 
-### 3. 既存リソースのインポート（初回のみ）
-
-既存のTransit Gatewayリソースをインポートする場合:
-
-```bash
-# import.shを編集してリソースIDを設定
-vim import.sh
-
-# 実行
-chmod +x import.sh
-./import.sh
-```
-
-### 4. Terraform実行
+#### 3. Terraform実行
 
 ```bash
 # 初期化
@@ -159,41 +212,62 @@ route_tables = {
 }
 ```
 
-## インポート手順（詳細）
+## 自動生成スクリプトの詳細
 
-### 1. AWSリソースIDの確認
+### fetch_aws_resources.sh
+
+既存のAWSリソース情報をJSON形式で取得します。
 
 ```bash
-# Transit Gateway IDを取得
-aws ec2 describe-transit-gateways --region ap-northeast-1
+# デフォルト（output/ディレクトリに出力）
+./scripts/fetch_aws_resources.sh
 
-# ルートテーブルIDを取得
-aws ec2 describe-transit-gateway-route-tables --region ap-northeast-1
-
-# VPCアタッチメントIDを取得
-aws ec2 describe-transit-gateway-attachments --region ap-northeast-1
+# 出力先とリージョンをカスタマイズ
+OUTPUT_DIR=./my-output AWS_REGION=us-west-2 ./scripts/fetch_aws_resources.sh
 ```
 
-### 2. import.shの編集
+取得される情報：
+- Transit Gateway
+- Transit Gateway Route Tables
+- VPC Attachments
+- Route Table Associations/Propagations
+- Transit Gateway Routes
+- VPC Route Tables
 
-取得したリソースIDを使ってimport.shを編集:
+### generate_terraform_config.py
+
+outputディレクトリのJSON情報から、terraform.tfvarsを自動生成します。
+
+```bash
+# デフォルト（terraform/terraform.tfvarsに出力）
+python3 scripts/generate_terraform_config.py
+
+# カスタマイズ
+python3 scripts/generate_terraform_config.py \
+  --input-dir ./output \
+  --output ./terraform/terraform.tfvars
+```
+
+### generate_import_commands.py
+
+outputディレクトリのJSON情報から、import.shを自動生成します。
+
+```bash
+# デフォルト（terraform/import.shに出力）
+python3 scripts/generate_import_commands.py
+
+# カスタマイズ
+python3 scripts/generate_import_commands.py \
+  --input-dir ./output \
+  --output ./terraform/import.sh
+```
+
+生成されるインポートコマンドの例：
 
 ```bash
 terraform import 'module.transit_gateway.aws_ec2_transit_gateway.this' tgw-xxxxx
 terraform import 'module.transit_gateway.aws_ec2_transit_gateway_route_table.this["development"]' tgw-rtb-xxxxx
-```
-
-### 3. インポート実行
-
-```bash
-chmod +x import.sh
-./import.sh
-```
-
-### 4. 確認
-
-```bash
-terraform plan  # "No changes"と表示されればOK
+terraform import 'module.transit_gateway.aws_ec2_transit_gateway_vpc_attachment.this["vpc1"]' tgw-attach-xxxxx
 ```
 
 ## 変更が必要なファイル

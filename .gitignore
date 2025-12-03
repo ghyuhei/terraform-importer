@@ -8,6 +8,9 @@ terraform/*.tfplan
 terraform/terraform.tfvars
 terraform/import.sh
 
+# AWS resource output (DO NOT COMMIT - contains account-specific IDs)
+output/
+
 # Python
 __pycache__/
 *.py[cod]
