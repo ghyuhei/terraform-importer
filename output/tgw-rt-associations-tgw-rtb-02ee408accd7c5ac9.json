@@ -1,0 +1,10 @@
+{
+    "Associations": [
+        {
+            "TransitGatewayAttachmentId": "tgw-attach-0961e593f8d411829",
+            "ResourceId": "vpc-08324ea89daeab65b",
+            "ResourceType": "vpc",
+            "State": "associated"
+        }
+    ]
+}

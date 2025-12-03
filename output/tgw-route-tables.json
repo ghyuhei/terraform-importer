@@ -1,0 +1,82 @@
+{
+    "TransitGatewayRouteTables": [
+        {
+            "TransitGatewayRouteTableId": "tgw-rtb-014cf3b043e8cbcb5",
+            "TransitGatewayId": "tgw-0abdeebb5572d555b",
+            "State": "available",
+            "DefaultAssociationRouteTable": false,
+            "DefaultPropagationRouteTable": false,
+            "CreationTime": "2025-12-03T03:17:49.000Z",
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "tokyo-network"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "TransitGatewayRouteTableDevelopment"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:ap-northeast-1:899824927162:stack/tokyo-network/954b4d50-cff6-11f0-841a-0a793c6ed631"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "tgw-rt-development"
+                }
+            ]
+        },
+        {
+            "TransitGatewayRouteTableId": "tgw-rtb-02ee408accd7c5ac9",
+            "TransitGatewayId": "tgw-0abdeebb5572d555b",
+            "State": "available",
+            "DefaultAssociationRouteTable": false,
+            "DefaultPropagationRouteTable": false,
+            "CreationTime": "2025-12-03T03:17:49.000Z",
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "tokyo-network"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "TransitGatewayRouteTableProduction"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:ap-northeast-1:899824927162:stack/tokyo-network/954b4d50-cff6-11f0-841a-0a793c6ed631"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "tgw-rt-production"
+                }
+            ]
+        },
+        {
+            "TransitGatewayRouteTableId": "tgw-rtb-088bbdfd8f7b67879",
+            "TransitGatewayId": "tgw-0abdeebb5572d555b",
+            "State": "available",
+            "DefaultAssociationRouteTable": false,
+            "DefaultPropagationRouteTable": false,
+            "CreationTime": "2025-12-03T03:17:49.000Z",
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "tokyo-network"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "TransitGatewayRouteTableShared"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:ap-northeast-1:899824927162:stack/tokyo-network/954b4d50-cff6-11f0-841a-0a793c6ed631"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "tgw-rt-shared"
+                }
+            ]
+        }
+    ]
+}

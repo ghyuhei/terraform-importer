@@ -1,0 +1,200 @@
+{
+    "RouteTables": [
+        {
+            "Associations": [
+                {
+                    "Main": true,
+                    "RouteTableAssociationId": "rtbassoc-092a3840f73a0a5bf",
+                    "RouteTableId": "rtb-061911f4c4c853856",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-061911f4c4c853856",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.1.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                }
+            ],
+            "Tags": [],
+            "VpcId": "vpc-08324ea89daeab65b",
+            "OwnerId": "899824927162"
+        },
+        {
+            "Associations": [
+                {
+                    "Main": true,
+                    "RouteTableAssociationId": "rtbassoc-02625a70e3f415dc0",
+                    "RouteTableId": "rtb-0fd264bbc28c1d597",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-0fd264bbc28c1d597",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.2.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                }
+            ],
+            "Tags": [],
+            "VpcId": "vpc-01bb54fccb438fbc1",
+            "OwnerId": "899824927162"
+        },
+        {
+            "Associations": [
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-0791ef71d239a77f8",
+                    "RouteTableId": "rtb-0fc6edc86814374de",
+                    "SubnetId": "subnet-07c04b5cbb15f0c4e",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                },
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-02b6cfc9c6952474f",
+                    "RouteTableId": "rtb-0fc6edc86814374de",
+                    "SubnetId": "subnet-095482388d6517605",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                },
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-0e63c1000a7ec08b9",
+                    "RouteTableId": "rtb-0fc6edc86814374de",
+                    "SubnetId": "subnet-0d808b02f4d5e8592",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-0fc6edc86814374de",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.1.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                },
+                {
+                    "DestinationCidrBlock": "10.2.0.0/16",
+                    "TransitGatewayId": "tgw-0abdeebb5572d555b",
+                    "Origin": "CreateRoute",
+                    "State": "active"
+                },
+                {
+                    "DestinationCidrBlock": "172.16.0.0/12",
+                    "TransitGatewayId": "tgw-0abdeebb5572d555b",
+                    "Origin": "CreateRoute",
+                    "State": "active"
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "tokyo-network"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:ap-northeast-1:899824927162:stack/tokyo-network/954b4d50-cff6-11f0-841a-0a793c6ed631"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "vpc1-route-table"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "Vpc1RouteTable"
+                }
+            ],
+            "VpcId": "vpc-08324ea89daeab65b",
+            "OwnerId": "899824927162"
+        },
+        {
+            "Associations": [
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-048e2b3f140603346",
+                    "RouteTableId": "rtb-0f957c3c869ee6fb2",
+                    "SubnetId": "subnet-0b794d8d003b5caf1",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                },
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-0ae2e32545eb497f1",
+                    "RouteTableId": "rtb-0f957c3c869ee6fb2",
+                    "SubnetId": "subnet-07150122a56c88d12",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                },
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-0f6af5fe53f512c7b",
+                    "RouteTableId": "rtb-0f957c3c869ee6fb2",
+                    "SubnetId": "subnet-03388d5e843e2f6c0",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-0f957c3c869ee6fb2",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.1.100.0/24",
+                    "TransitGatewayId": "tgw-0abdeebb5572d555b",
+                    "Origin": "CreateRoute",
+                    "State": "active"
+                },
+                {
+                    "DestinationCidrBlock": "10.1.0.0/16",
+                    "TransitGatewayId": "tgw-0abdeebb5572d555b",
+                    "Origin": "CreateRoute",
+                    "State": "active"
+                },
+                {
+                    "DestinationCidrBlock": "10.2.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "vpc2-route-table"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "Vpc2RouteTable"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "tokyo-network"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:ap-northeast-1:899824927162:stack/tokyo-network/954b4d50-cff6-11f0-841a-0a793c6ed631"
+                }
+            ],
+            "VpcId": "vpc-01bb54fccb438fbc1",
+            "OwnerId": "899824927162"
+        }
+    ]
+}
