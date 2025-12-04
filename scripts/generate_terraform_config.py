@@ -161,7 +161,7 @@ class TerraformConfigGenerator:
 
         # VPC Attachments
         vpc_attachments = {}
-        attachment_id_to_key = {}
+        attachment_id_to_key = {}  # Maps attachment_id -> (key, type)
 
         for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
             if attachment.get('ResourceType') != 'vpc':
@@ -170,10 +170,19 @@ class TerraformConfigGenerator:
             attachment_id = attachment['TransitGatewayAttachmentId']
             name = self.get_tag_value(attachment.get('Tags'), 'Name', attachment_id)
             key = self.sanitize_key(name)
-            attachment_id_to_key[attachment_id] = key
+            attachment_id_to_key[attachment_id] = (key, 'vpc')
 
             vpc_id = attachment.get('ResourceId', '')
-            subnet_ids = attachment.get('SubnetIds', [])
+
+            # Try to get subnet_ids from detailed VPC attachment file
+            subnet_ids = []
+            vpc_att_detail_file = self.input_dir / f'tgw-vpc-attachment-{attachment_id}.json'
+            if vpc_att_detail_file.exists():
+                with open(vpc_att_detail_file, 'r', encoding='utf-8') as f:
+                    vpc_att_detail = json.load(f)
+                    vpc_att = vpc_att_detail.get('TransitGatewayVpcAttachments', [])
+                    if vpc_att:
+                        subnet_ids = vpc_att[0].get('SubnetIds', [])
 
             vpc_attachments[key] = {
                 'name': name,
@@ -211,6 +220,64 @@ class TerraformConfigGenerator:
             lines.append("}")
             lines.append("")
 
+        # Peering Attachments
+        peering_attachments = {}
+        for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
+            if attachment.get('ResourceType') != 'peering':
+                continue
+
+            attachment_id = attachment['TransitGatewayAttachmentId']
+            name = self.get_tag_value(attachment.get('Tags'), 'Name', attachment_id)
+            key = self.sanitize_key(name)
+            attachment_id_to_key[attachment_id] = (key, 'peering')
+
+            # Get detailed peering attachment information
+            peer_tgw_id = ""
+            peer_region = ""
+            peer_account_id = ""
+
+            peer_att_detail_file = self.input_dir / f'tgw-peering-attachment-{attachment_id}.json'
+            if peer_att_detail_file.exists():
+                with open(peer_att_detail_file, 'r', encoding='utf-8') as f:
+                    peer_att_detail = json.load(f)
+                    peer_att = peer_att_detail.get('TransitGatewayPeeringAttachments', [])
+                    if peer_att:
+                        peering = peer_att[0]
+                        peer_tgw_id = peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', '')
+                        peer_region = peering.get('AccepterTgwInfo', {}).get('Region', '')
+                        peer_account_id = peering.get('AccepterTgwInfo', {}).get('OwnerId', '')
+
+            if peer_tgw_id and peer_region:
+                peering_attachments[key] = {
+                    'name': name,
+                    'peer_transit_gateway_id': peer_tgw_id,
+                    'peer_region': peer_region,
+                    'peer_account_id': peer_account_id,
+                    'tags': self.tags_to_map(attachment.get('Tags'))
+                }
+
+        if peering_attachments:
+            lines.append("# =============================================================================")
+            lines.append("# Peering Attachments (Inter-region TGW Peering)")
+            lines.append("# =============================================================================")
+            lines.append("")
+            lines.append("peering_attachments = {")
+            for key, config in peering_attachments.items():
+                lines.append(f'  {key} = {{')
+                lines.append(f'    name                    = "{config["name"]}"')
+                lines.append(f'    peer_transit_gateway_id = "{config["peer_transit_gateway_id"]}"')
+                lines.append(f'    peer_region             = "{config["peer_region"]}"')
+                if config['peer_account_id']:
+                    lines.append(f'    peer_account_id         = "{config["peer_account_id"]}"')
+                if config['tags']:
+                    lines.append('    tags = {')
+                    for tag_key, tag_value in config['tags'].items():
+                        lines.append(f'      "{tag_key}" = "{tag_value}"')
+                    lines.append('    }')
+                lines.append('  }')
+            lines.append("}")
+            lines.append("")
+
         # Route Table Associations
         associations = {}
         for rt_id, rt_key in rt_id_to_key.items():
@@ -229,12 +296,13 @@ class TerraformConfigGenerator:
                 if attachment_id not in attachment_id_to_key:
                     continue
 
-                attachment_key = attachment_id_to_key[attachment_id]
+                attachment_key, attachment_type = attachment_id_to_key[attachment_id]
                 assoc_key = f"{rt_key}_{attachment_key}"
 
                 associations[assoc_key] = {
                     'route_table_key': rt_key,
-                    'attachment_key': attachment_key
+                    'attachment_key': attachment_key,
+                    'attachment_type': attachment_type
                 }
 
         if associations:
@@ -247,6 +315,8 @@ class TerraformConfigGenerator:
                 lines.append(f'  {key} = {{')
                 lines.append(f'    route_table_key = "{config["route_table_key"]}"')
                 lines.append(f'    attachment_key  = "{config["attachment_key"]}"')
+                if config.get('attachment_type') != 'vpc':
+                    lines.append(f'    attachment_type = "{config["attachment_type"]}"')
                 lines.append('  }')
             lines.append("}")
             lines.append("")
@@ -269,12 +339,13 @@ class TerraformConfigGenerator:
                 if attachment_id not in attachment_id_to_key:
                     continue
 
-                attachment_key = attachment_id_to_key[attachment_id]
+                attachment_key, attachment_type = attachment_id_to_key[attachment_id]
                 prop_key = f"{rt_key}_{attachment_key}"
 
                 propagations[prop_key] = {
                     'route_table_key': rt_key,
-                    'attachment_key': attachment_key
+                    'attachment_key': attachment_key,
+                    'attachment_type': attachment_type
                 }
 
         if propagations:
@@ -287,6 +358,8 @@ class TerraformConfigGenerator:
                 lines.append(f'  {key} = {{')
                 lines.append(f'    route_table_key = "{config["route_table_key"]}"')
                 lines.append(f'    attachment_key  = "{config["attachment_key"]}"')
+                if config.get('attachment_type') != 'vpc':
+                    lines.append(f'    attachment_type = "{config["attachment_type"]}"')
                 lines.append('  }')
             lines.append("}")
             lines.append("")
@@ -324,9 +397,10 @@ class TerraformConfigGenerator:
                 # Add attachment key if not blackhole
                 if not is_blackhole:
                     # Find attachment from route
-                    for attachment_id, attachment_key in attachment_id_to_key.items():
+                    for attachment_id, (attachment_key, attachment_type) in attachment_id_to_key.items():
                         if attachment_id in str(route.get('TransitGatewayAttachments', [])):
                             tgw_routes[route_key]['attachment_key'] = attachment_key
+                            tgw_routes[route_key]['attachment_type'] = attachment_type
                             break
 
         if tgw_routes:
@@ -341,6 +415,8 @@ class TerraformConfigGenerator:
                 lines.append(f'    route_table_key        = "{config["route_table_key"]}"')
                 if 'attachment_key' in config:
                     lines.append(f'    attachment_key         = "{config["attachment_key"]}"')
+                if config.get('attachment_type') and config.get('attachment_type') != 'vpc':
+                    lines.append(f'    attachment_type        = "{config["attachment_type"]}"')
                 if config.get('blackhole'):
                     lines.append('    blackhole              = true')
                 lines.append('  }')

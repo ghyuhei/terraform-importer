@@ -138,3 +138,19 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# =============================================================================
+# Peering Attachments (Inter-region TGW Peering)
+# =============================================================================
+
+variable "peering_attachments" {
+  description = "Map of Transit Gateway peering attachments (for cross-region peering)"
+  type = map(object({
+    name                    = string
+    peer_transit_gateway_id = string
+    peer_region             = string
+    peer_account_id         = optional(string)
+    tags                    = optional(map(string), {})
+  }))
+  default = {}
+}

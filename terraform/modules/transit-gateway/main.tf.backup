@@ -1,14 +1,11 @@
 # Transit Gateway Module
+# This module manages AWS Transit Gateway and related resources
 
 # Transit Gateway Route Table Associations (Dynamic with for_each)
 resource "aws_ec2_transit_gateway_route_table_association" "this" {
   for_each = var.route_table_associations
 
-  transit_gateway_attachment_id = (
-    try(each.value.attachment_type, "vpc") == "peering" ?
-    aws_ec2_transit_gateway_peering_attachment.this[each.value.attachment_key].id :
-    aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id
-  )
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this[each.value.route_table_key].id
 }
 
@@ -16,11 +13,7 @@ resource "aws_ec2_transit_gateway_route_table_association" "this" {
 resource "aws_ec2_transit_gateway_route_table_propagation" "this" {
   for_each = var.route_table_propagations
 
-  transit_gateway_attachment_id = (
-    try(each.value.attachment_type, "vpc") == "peering" ?
-    aws_ec2_transit_gateway_peering_attachment.this[each.value.attachment_key].id :
-    aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id
-  )
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this[each.value.route_table_key].id
 }
 
@@ -40,24 +33,6 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   lifecycle {
     ignore_changes = [subnet_ids, appliance_mode_support, dns_support, ipv6_support]
   }
-
-  tags = merge(
-    var.tags,
-    {
-      Name = each.value.name
-    },
-    try(each.value.tags, {})
-  )
-}
-
-# Transit Gateway Peering Attachments (Dynamic with for_each)
-resource "aws_ec2_transit_gateway_peering_attachment" "this" {
-  for_each = var.peering_attachments
-
-  transit_gateway_id      = aws_ec2_transit_gateway.this.id
-  peer_transit_gateway_id = each.value.peer_transit_gateway_id
-  peer_region             = each.value.peer_region
-  peer_account_id         = try(each.value.peer_account_id, null)
 
   tags = merge(
     var.tags,
@@ -91,12 +66,8 @@ resource "aws_ec2_transit_gateway_route" "this" {
 
   destination_cidr_block         = each.value.destination_cidr_block
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this[each.value.route_table_key].id
-  transit_gateway_attachment_id = try(each.value.attachment_key != null ? (
-    try(each.value.attachment_type, "vpc") == "peering" ?
-    aws_ec2_transit_gateway_peering_attachment.this[each.value.attachment_key].id :
-    aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id
-  ) : null, null)
-  blackhole = try(each.value.blackhole, false)
+  transit_gateway_attachment_id  = try(each.value.attachment_key != null ? aws_ec2_transit_gateway_vpc_attachment.this[each.value.attachment_key].id : null, null)
+  blackhole                      = try(each.value.blackhole, false)
 }
 
 
@@ -127,3 +98,5 @@ resource "aws_route" "this" {
   destination_cidr_block = each.value.destination_cidr_block
   transit_gateway_id     = aws_ec2_transit_gateway.this.id
 }
+
+

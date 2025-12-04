@@ -19,3 +19,8 @@ output "vpc_attachment_ids" {
   description = "VPC Attachment IDs"
   value       = module.transit_gateway.vpc_attachment_ids
 }
+
+output "peering_attachment_ids" {
+  description = "Map of peering attachment names to IDs"
+  value       = module.transit_gateway.peering_attachment_ids
+}

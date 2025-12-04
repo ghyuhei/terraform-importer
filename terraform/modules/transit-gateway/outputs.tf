@@ -28,3 +28,10 @@ output "vpc_attachment_ids" {
     for k, v in aws_ec2_transit_gateway_vpc_attachment.this : k => v.id
   }
 }
+
+output "peering_attachment_ids" {
+  description = "Map of peering attachment names to IDs"
+  value = {
+    for k, v in aws_ec2_transit_gateway_peering_attachment.this : k => v.id
+  }
+}

@@ -6,6 +6,7 @@ AWS Transit Gatewayを管理するためのTerraformモジュールです。既�
 
 - **自動インポート**: スクリプトで既存リソースを自動検出し、terraform.tfvarsとimport.shを生成
 - **動的リソース管理**: for_eachを使用し、terraform.tfvarsの変更のみでリソースを追加・削除可能
+- **リージョン間ピアリング対応**: Transit Gatewayピアリングアタッチメントをサポート
 - **モジュール化**: 再利用可能なモジュール構造
 - **変更に強い**: 環境固有の値はterraform.tfvarsで管理
 
@@ -22,8 +23,8 @@ AWS Transit Gatewayを管理するためのTerraformモジュールです。既�
 └── terraform/
     ├── main.tf                          # ルートモジュール
     ├── variables.tf                     # 変数定義
-    ├── terraform.tfvars                 # 環境固有の値（Git管理対象外）
-    ├── terraform.tfvars.example         # 設定例
+    ├── terraform.tfvars                 # 環境固有の値（自動生成または手動作成）
+    ├── terraform.tfvars.example         # 設定例（参考用）
     ├── versions.tf                      # Terraform/プロバイダーバージョン
     ├── outputs.tf                       # 出力値
     ├── import.sh                        # インポートスクリプト（自動生成）
@@ -36,86 +37,107 @@ AWS Transit Gatewayを管理するためのTerraformモジュールです。既�
 
 ## 使い方
 
-2つのユースケースがあります：
-
 ### ケースA: 既存リソースをインポートする（推奨）
 
 既存のAWS Transit Gatewayリソースを管理下に置く場合の手順です。
 
-#### 1. AWSリソース情報を取得
+#### 前提条件
+
+- Terraform >= 1.5
+- Python 3.8+
+- AWS CLI (認証情報が設定済み)
+
+#### 手順
+
+**1. AWSリソース情報を取得**
 
 ```bash
+# AWS認証情報を設定（必要に応じて）
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_SESSION_TOKEN="your-session-token"  # 一時認証情報の場合
+
 # スクリプトを使って既存リソース情報を自動取得
+./scripts/fetch_aws_resources.sh
+
+# リージョンを指定する場合
+AWS_REGION=us-west-2 ./scripts/fetch_aws_resources.sh
+```
+
+取得される情報：
+- Transit Gateway本体
+- Transit Gateway Route Tables
+- VPC Attachments（**subnet_ids含む**）
+- Peering Attachments（リージョン間ピアリング）
+- Route Table Associations/Propagations
+- Transit Gateway Routes
+- VPC Route Tables
+
+**2. terraform.tfvarsとimport.shを自動生成**
+
+```bash
+# terraform.tfvarsを生成
+python3 scripts/generate_terraform_config.py
+
+# import.shを生成
+python3 scripts/generate_import_commands.py
+```
+
+**3. Terraformを初期化**
+
+```bash
 cd terraform
-../scripts/fetch_aws_resources.sh
-
-# outputディレクトリにJSON形式で保存されます
-```
-
-#### 2. terraform.tfvarsとimport.shを自動生成
-
-```bash
-# terraform.tfvarsを生成（既存リソースから自動生成）
-python3 ../scripts/generate_terraform_config.py
-
-# import.shを生成（インポートコマンドを自動生成）
-python3 ../scripts/generate_import_commands.py
-```
-
-生成されたファイルを確認・調整してください。
-
-#### 3. Terraformを初期化してインポート実行
-
-```bash
-# 初期化
 terraform init
+```
 
-# インポート実行
+**4. インポート実行**
+
+```bash
+# import.shを実行可能にして実行
 chmod +x import.sh
 ./import.sh
+```
 
-# 差分確認（差分がないことを確認）
+**5. 差分確認**
+
+```bash
 terraform plan
 ```
 
-#### 4. 差分がある場合は調整
+期待される結果：
+```
+Plan: 0 to add, 6 to change, 0 to destroy.
+```
 
-terraform planで差分が表示された場合、terraform.tfvarsを微調整します：
+タグの追加のみの差分（`ManagedBy = "Terraform"`など）は正常です。
+
+**6. （オプション）タグを適用**
 
 ```bash
-# 実際のリソース情報を確認
-terraform state show 'module.transit_gateway.aws_ec2_transit_gateway.this'
-
-# terraform.tfvarsを編集して合わせる
-vim terraform.tfvars
-
-# 再度確認
-terraform plan  # "No changes"が理想
+terraform apply
 ```
 
 ### ケースB: 新規作成する
 
 新しくTransit Gatewayを構築する場合の手順です。
 
-#### 1. 設定ファイルを準備
+#### 1. terraform.tfvarsを作成して編集
 
 ```bash
 cd terraform
 
-# サンプルファイルをコピー
-cp terraform.tfvars.example terraform.tfvars
-
-# エディタで編集
+# terraform.tfvarsを作成し、実際のVPC IDやサブネットIDを設定
 vim terraform.tfvars
 ```
 
-#### 2. terraform.tfvarsを実際の環境に合わせて編集
-
-以下のように、実際のVPC IDやサブネットIDに変更します：
+設定例：
 
 ```hcl
 region      = "ap-northeast-1"
-transit_gateway_name = "tgw"
+environment = "production"
+
+transit_gateway_name        = "tgw"
+transit_gateway_description = "Transit Gateway"
 
 vpc_attachments = {
   vpc1 = {
@@ -141,7 +163,7 @@ tgw_routes = {
 }
 ```
 
-#### 3. Terraform実行
+#### 2. Terraform実行
 
 ```bash
 # 初期化
@@ -195,6 +217,42 @@ vpc_attachments = {
 }
 ```
 
+### リージョン間ピアリングを追加する
+
+`terraform.tfvars`の`peering_attachments`セクションに追加:
+
+```hcl
+peering_attachments = {
+  peer_us_west_2 = {
+    name                    = "tgw-peering-us-west-2"
+    peer_transit_gateway_id = "tgw-0123456789abcdef0"
+    peer_region             = "us-west-2"
+    peer_account_id         = "123456789012"  # 別アカウントの場合のみ必要
+  }
+}
+```
+
+ピアリングアタッチメントをルートテーブルに関連付ける場合は、`attachment_type = "peering"`を指定:
+
+```hcl
+route_table_associations = {
+  production_peer_us_west_2 = {
+    route_table_key = "production"
+    attachment_key  = "peer_us_west_2"
+    attachment_type = "peering"
+  }
+}
+
+tgw_routes = {
+  prod_172_16_0_0_12_via_peering = {
+    destination_cidr_block = "172.16.0.0/12"
+    route_table_key        = "production"
+    attachment_key         = "peer_us_west_2"
+    attachment_type        = "peering"
+  }
+}
+```
+
 ### ブラックホールルートを追加する
 
 `blackhole = true`を設定:
@@ -231,7 +289,7 @@ route_tables = {
 既存のAWSリソース情報をJSON形式で取得します。
 
 ```bash
-# デフォルト（output/ディレクトリに出力）
+# デフォルト（output/ディレクトリに出力、ap-northeast-1リージョン）
 ./scripts/fetch_aws_resources.sh
 
 # 出力先とリージョンをカスタマイズ
@@ -239,12 +297,16 @@ OUTPUT_DIR=./my-output AWS_REGION=us-west-2 ./scripts/fetch_aws_resources.sh
 ```
 
 取得される情報：
-- Transit Gateway
+- Transit Gateway本体
 - Transit Gateway Route Tables
-- VPC Attachments
+- VPC Attachments（基本情報）
+- VPC Attachment詳細（subnet_ids含む）
+- Peering Attachments（リージョン間ピアリング）
 - Route Table Associations/Propagations
 - Transit Gateway Routes
 - VPC Route Tables
+
+**重要**: VPC Attachmentのsubnet_idsを取得するため、`describe-transit-gateway-vpc-attachments`で詳細情報を取得しています。
 
 ### generate_terraform_config.py
 
@@ -280,6 +342,7 @@ python3 scripts/generate_import_commands.py \
 terraform import 'module.transit_gateway.aws_ec2_transit_gateway.this' tgw-xxxxx
 terraform import 'module.transit_gateway.aws_ec2_transit_gateway_route_table.this["development"]' tgw-rtb-xxxxx
 terraform import 'module.transit_gateway.aws_ec2_transit_gateway_vpc_attachment.this["vpc1"]' tgw-attach-xxxxx
+terraform import 'module.transit_gateway.aws_ec2_transit_gateway_peering_attachment.this["peer_us_west_2"]' tgw-attach-xxxxx
 ```
 
 ## 変更が必要なファイル
@@ -288,13 +351,14 @@ terraform import 'module.transit_gateway.aws_ec2_transit_gateway_vpc_attachment.
 |---------|----------------|---------|
 | ルート追加/削除 | `terraform.tfvars` | `tgw_routes`セクション |
 | VPCアタッチメント追加 | `terraform.tfvars` | `vpc_attachments`セクション |
+| ピアリングアタッチメント追加 | `terraform.tfvars` | `peering_attachments`セクション |
 | ルートテーブル追加 | `terraform.tfvars` | `route_tables`セクション |
 | VPCルート追加 | `terraform.tfvars` | `vpc_routes`セクション |
 | Association/Propagation追加 | `terraform.tfvars` | `route_table_associations`/`route_table_propagations`セクション |
 | リージョン変更 | `terraform.tfvars` | `region` |
 | タグ変更 | `terraform.tfvars` | `tags`セクション |
 
-**モジュールのコード（`modules/transit-gateway/`）は変更不要です！**
+**通常の運用では`terraform.tfvars`のみを編集します。モジュールのコード（`modules/transit-gateway/`）は変更不要です。**
 
 ## トラブルシューティング
 
@@ -316,13 +380,16 @@ terraform.tfvarsの値がAWSの実際の値と一致しているか確認:
 terraform state show 'module.transit_gateway.aws_ec2_transit_gateway.this'
 ```
 
-### インポート後にplanでタグの変更が表示される
+### インポート後にplanで変更が表示される
 
-正常な動作です。tagsの追加のみの場合は問題ありません:
+以下の場合は正常な動作です：
 
-```
-Plan: 0 to add, 6 to change, 0 to destroy.
-```
+1. **タグの追加のみ**: `ManagedBy = "Terraform"`などのタグが追加される
+   ```
+   Plan: 0 to add, 6 to change, 0 to destroy.
+   ```
+
+2. **lifecycle ignore_changesによる差分**: VPC Attachmentの`subnet_ids`などは意図的に無視される設定になっています
 
 ## 要件
 

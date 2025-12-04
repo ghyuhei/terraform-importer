@@ -16,6 +16,7 @@ module "transit_gateway" {
   # Route tables, attachments, and associations
   route_tables             = var.route_tables
   vpc_attachments          = var.vpc_attachments
+  peering_attachments      = var.peering_attachments
   route_table_associations = var.route_table_associations
   route_table_propagations = var.route_table_propagations
 

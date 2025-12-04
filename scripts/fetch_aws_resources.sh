@@ -21,6 +21,26 @@ aws ec2 describe-transit-gateway-route-tables --region "$REGION" --output json >
 aws ec2 describe-transit-gateway-attachments --region "$REGION" --output json > "$OUTPUT_DIR/tgw-attachments.json"
 aws ec2 describe-route-tables --region "$REGION" --output json > "$OUTPUT_DIR/route-tables.json"
 
+# Get detailed VPC attachment information including subnet_ids
+ATTACHMENT_IDS=$(aws ec2 describe-transit-gateway-attachments --region "$REGION" \
+  --filters "Name=resource-type,Values=vpc" \
+  --query 'TransitGatewayAttachments[*].TransitGatewayAttachmentId' --output text)
+
+for ATT_ID in $ATTACHMENT_IDS; do
+  aws ec2 describe-transit-gateway-vpc-attachments --region "$REGION" \
+    --transit-gateway-attachment-ids "$ATT_ID" --output json > "$OUTPUT_DIR/tgw-vpc-attachment-$ATT_ID.json"
+done
+
+# Get peering attachments (for inter-region peering)
+PEERING_IDS=$(aws ec2 describe-transit-gateway-attachments --region "$REGION" \
+  --filters "Name=resource-type,Values=peering" \
+  --query 'TransitGatewayAttachments[*].TransitGatewayAttachmentId' --output text)
+
+for PEER_ID in $PEERING_IDS; do
+  aws ec2 describe-transit-gateway-peering-attachments --region "$REGION" \
+    --transit-gateway-attachment-ids "$PEER_ID" --output json > "$OUTPUT_DIR/tgw-peering-attachment-$PEER_ID.json"
+done
+
 # Associations & Propagations
 for TGW_ID in $TGW_IDS; do
   RT_IDS=$(aws ec2 describe-transit-gateway-route-tables --region "$REGION" \

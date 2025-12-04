@@ -8,6 +8,7 @@
 variable "region" {
   description = "AWS region where resources will be created"
   type        = string
+  default     = "ap-northeast-1"
 }
 
 variable "environment" {
@@ -23,6 +24,7 @@ variable "environment" {
 variable "transit_gateway_name" {
   description = "Name tag for Transit Gateway"
   type        = string
+  default     = "tgw"
 }
 
 variable "transit_gateway_description" {
@@ -77,6 +79,7 @@ variable "route_tables" {
     name = string
     tags = optional(map(string), {})
   }))
+  default = {}
 }
 
 # =============================================================================
@@ -94,6 +97,19 @@ variable "vpc_attachments" {
     ipv6_support           = optional(string, "disable")
     tags                   = optional(map(string), {})
   }))
+  default = {}
+}
+
+variable "peering_attachments" {
+  description = "Map of Transit Gateway peering attachments (for cross-region peering)"
+  type = map(object({
+    name                    = string
+    peer_transit_gateway_id = string
+    peer_region             = string
+    peer_account_id         = optional(string)
+    tags                    = optional(map(string), {})
+  }))
+  default = {}
 }
 
 # =============================================================================
@@ -105,7 +121,9 @@ variable "route_table_associations" {
   type = map(object({
     route_table_key = string
     attachment_key  = string
+    attachment_type = optional(string, "vpc")
   }))
+  default = {}
 }
 
 variable "route_table_propagations" {
@@ -113,7 +131,9 @@ variable "route_table_propagations" {
   type = map(object({
     route_table_key = string
     attachment_key  = string
+    attachment_type = optional(string, "vpc")
   }))
+  default = {}
 }
 
 # =============================================================================
@@ -126,8 +146,10 @@ variable "tgw_routes" {
     destination_cidr_block = string
     route_table_key        = string
     attachment_key         = optional(string)
+    attachment_type        = optional(string, "vpc")
     blackhole              = optional(bool, false)
   }))
+  default = {}
 }
 
 variable "vpc_routes" {
@@ -136,6 +158,7 @@ variable "vpc_routes" {
     route_table_id         = string
     destination_cidr_block = string
   }))
+  default = {}
 }
 
 # =============================================================================
