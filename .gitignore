@@ -1,12 +1,16 @@
 # Terraform state and cache
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/terraform.tfstate*
-terraform/*.tfplan
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate*
+**/*.tfplan
 
 # Environment-specific files (DO NOT COMMIT)
 terraform/terraform.tfvars
-terraform/import.sh
+
+# Generated files (DO NOT COMMIT - will be regenerated per environment)
+terraform/*/import.sh
+terraform/*/locals.tf
+aws_resources/
 
 # AWS resource output (DO NOT COMMIT - contains account-specific IDs)
 output/
@@ -14,3 +18,4 @@ output/
 # Python
 __pycache__/
 *.py[cod]
+*.backup

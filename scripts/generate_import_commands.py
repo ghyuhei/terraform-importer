@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
-"""Terraform Import Command Generator for for_each-based module structure.
+"""Import Commands Generator for route-table-based directory structure.
 
-Generates terraform import commands for resources managed by the transit-gateway module.
-Works with the new for_each-based dynamic resource structure.
+Generates import.sh scripts for:
+- terraform/tgw/import.sh : Import Transit Gateway
+- terraform/rt-{name}/import.sh : Import route table and its resources
+
+Supports multi-account and multi-region environments.
 
 Requirements: Python 3.8+
 """
 
 import json
-import os
+import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 # Constants
 DEFAULT_INPUT_DIR = './output'
-DEFAULT_OUTPUT_FILE = './terraform/import.sh'
+DEFAULT_OUTPUT_DIR = './terraform'
 
 
-class ImportCommandGenerator:
-    """Generator for Terraform import commands."""
+class ImportCommandsGeneratorV2:
+    """Generator for split import commands."""
 
-    def __init__(self, input_dir: str) -> None:
+    def __init__(self, input_dir: str, output_dir: str, account_id: str = None, region: str = None) -> None:
         self.input_dir = Path(input_dir)
+        self.output_dir = Path(output_dir)
+        self.account_id = account_id
+        self.region = region
+        self.selected_tgw_id = None  # Will be set when selecting TGW
 
     def load_json(self, filename: str) -> dict:
         """Load JSON file from input directory."""
@@ -42,218 +49,270 @@ class ImportCommandGenerator:
 
     def sanitize_key(self, name: str) -> str:
         """Sanitize resource name for use as Terraform map key."""
-        # Convert to lowercase and replace special characters with underscores
-        return name.replace('-', '_').replace(' ', '_').lower()
+        return name.replace('-', '_').replace(' ', '_').replace(':', '_').lower()
 
-    def generate_import_commands(self) -> str:
-        """Generate all import commands for for_each-based module."""
-        commands = []
-        commands.append("#!/bin/bash")
-        commands.append("")
-        commands.append("# Terraform Import Commands")
-        commands.append("# Auto-generated script to import existing AWS resources into Terraform")
-        commands.append("# This script works with the for_each-based transit-gateway module")
-        commands.append("")
-        commands.append("set -euo pipefail")
-        commands.append("")
-        commands.append('cd "$(dirname "$0")"')
-        commands.append("")
+    def sanitize_dirname(self, name: str) -> str:
+        """Sanitize route table name for directory name.
+        
+        Examples:
+            tgw-rt-production -> rt-production
+            TGW-RT-Shared -> rt-shared
+        """
+        # Remove tgw-rt- prefix (case insensitive)
+        name = re.sub(r'^tgw-rt-', '', name, flags=re.IGNORECASE)
+        return name.replace(' ', '-').replace('_', '-').lower()
 
-        # Load all data
+    def generate_shared_import(self) -> str:
+        """Generate import.sh for shared Transit Gateway."""
         tgws_data = self.load_json('transit-gateways.json')
-        tgw_rts_data = self.load_json('tgw-route-tables.json')
-        tgw_attachments_data = self.load_json('tgw-attachments.json')
-        route_tables_data = self.load_json('route-tables.json')
-
-        # Maps to track resource relationships
-        rt_id_to_key = {}  # route table ID -> map key
-        attachment_id_to_key = {}  # attachment ID -> map key
-
-        # Import Transit Gateway (single resource, not for_each)
-        commands.append("echo 'Importing Transit Gateway...'")
         tgws = tgws_data.get('TransitGateways', [])
-        if tgws:
-            tgw = tgws[0]  # Assume single TGW
-            tgw_id = tgw['TransitGatewayId']
-            name = self.get_tag_value(tgw.get('Tags', []), 'Name', tgw_id)
 
-            commands.append(f"# Transit Gateway: {name}")
-            commands.append(
-                f"terraform import 'module.transit_gateway.aws_ec2_transit_gateway.this' {tgw_id}"
-            )
-            commands.append("")
+        if not tgws:
+            return "#!/bin/bash\necho 'No Transit Gateway found'\nexit 1\n"
 
-        # Import Transit Gateway Route Tables (for_each)
-        commands.append("echo 'Importing Transit Gateway Route Tables...'")
+        # Select TGW with custom route tables (DefaultRouteTableAssociation = disable)
+        selected_tgw = None
+        for tgw in tgws:
+            options = tgw.get('Options', {})
+            if options.get('DefaultRouteTableAssociation') == 'disable':
+                selected_tgw = tgw
+                break
+
+        # Fallback to first TGW if none found with disable
+        if not selected_tgw:
+            selected_tgw = tgws[0]
+
+        tgw = selected_tgw
+        tgw_id = tgw['TransitGatewayId']
+        self.selected_tgw_id = tgw_id  # Store selected TGW ID
+
+        lines = ["#!/bin/bash", "set -euo pipefail", ""]
+        lines.append("echo 'Importing Transit Gateway...'")
+        lines.append(f"terraform import aws_ec2_transit_gateway.this {tgw_id}")
+        lines.append("")
+
+        # Import VPC Attachments
+        all_attachments = self.collect_all_attachments()
+        vpc_attachments = {k: v for k, v in all_attachments.items() if v['type'] == 'vpc'}
+
+        if vpc_attachments:
+            lines.append("echo 'Importing VPC Attachments...'")
+            for att_id, att in vpc_attachments.items():
+                att_key = att['key']
+                lines.append(f"terraform import 'aws_ec2_transit_gateway_vpc_attachment.this[\"{att_key}\"]' {att_id}")
+            lines.append("")
+
+        lines.append("echo '✓ Import completed'")
+        lines.append("")
+
+        return '\n'.join(lines)
+
+    def collect_all_attachments(self) -> Dict[str, Any]:
+        """Collect all attachment information indexed by attachment_id."""
+        attachments = {}
+
+        tgw_attachments_data = self.load_json('tgw-attachments.json')
+
+        for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
+            attachment_id = attachment['TransitGatewayAttachmentId']
+            resource_type = attachment.get('ResourceType', '')
+            name = self.get_tag_value(attachment.get('Tags'), 'Name', attachment_id)
+            key = self.sanitize_key(name)
+
+            attachments[attachment_id] = {
+                'key': key,
+                'type': resource_type,
+                'name': name,
+                'attachment_id': attachment_id,
+                'resource_id': attachment.get('ResourceId', '')
+            }
+
+        return attachments
+
+    def generate_route_table_import(self, rt_id: str, rt_name: str,
+                                     rt_attachments: Dict[str, Any],
+                                     associations: List[str],
+                                     propagations: List[str],
+                                     routes: List[Dict[str, Any]]) -> str:
+        """Generate import.sh for a route table."""
+        lines = ["#!/bin/bash", "set -euo pipefail", ""]
+        lines.append(f"echo 'Importing resources for route table: {rt_name}'")
+        lines.append("")
+
+        # Import route table
+        lines.append("# Import Route Table")
+        lines.append(f"terraform import aws_ec2_transit_gateway_route_table.this {rt_id}")
+        lines.append("")
+
+        # Group attachments by type
+        vpc_atts = {k: v for k, v in rt_attachments.items() if v['type'] == 'vpc'}
+        peer_atts = {k: v for k, v in rt_attachments.items() if v['type'] == 'peering'}
+        vpn_atts = {k: v for k, v in rt_attachments.items() if v['type'] == 'vpn'}
+        dx_atts = {k: v for k, v in rt_attachments.items() if v['type'] == 'direct-connect-gateway'}
+
+        # Note: VPC Attachments are managed in the tgw/ directory
+        # Route tables only manage associations to those attachments
+
+        # Import Associations
+        if associations:
+            lines.append("# Import Route Table Associations")
+            for assoc_key in associations:
+                # Association ID format: tgw-rtb-xxxxx_tgw-attach-xxxxx
+                if assoc_key in rt_attachments:
+                    att_id = rt_attachments[assoc_key]['attachment_id']
+                    lines.append(f"terraform import 'aws_ec2_transit_gateway_route_table_association.this[\"{assoc_key}\"]' {rt_id}_{att_id}")
+                else:
+                    lines.append(f"# terraform import 'aws_ec2_transit_gateway_route_table_association.this[\"{assoc_key}\"]' {rt_id}_<attachment-id>")
+            lines.append("")
+
+        # Import Propagations
+        if propagations:
+            lines.append("# Import Route Table Propagations")
+            for prop_key in propagations:
+                # Propagation ID format: tgw-rtb-xxxxx_tgw-attach-xxxxx
+                if prop_key in rt_attachments:
+                    att_id = rt_attachments[prop_key]['attachment_id']
+                    lines.append(f"terraform import 'aws_ec2_transit_gateway_route_table_propagation.this[\"{prop_key}\"]' {rt_id}_{att_id}")
+                else:
+                    lines.append(f"# terraform import 'aws_ec2_transit_gateway_route_table_propagation.this[\"{prop_key}\"]' {rt_id}_<attachment-id>")
+            lines.append("")
+
+        # Import Transit Gateway Routes
+        if routes:
+            lines.append("# Import Transit Gateway Routes")
+            for route in routes:
+                route_key = route['key']
+                destination = route['destination_cidr_block']
+                # Route import format: tgw-rtb-xxxxx_destination
+                lines.append(f"terraform import 'aws_ec2_transit_gateway_route.this[\"{route_key}\"]' {rt_id}_{destination}")
+            lines.append("")
+
+        lines.append("echo '✓ Import completed'")
+        lines.append("")
+
+        return '\n'.join(lines)
+
+    def generate_all_imports(self) -> None:
+        """Generate all import scripts."""
+        # Generate tgw/import.sh
+        tgw_dir = self.output_dir / 'tgw'
+        tgw_dir.mkdir(parents=True, exist_ok=True)
+
+        tgw_import = self.generate_shared_import()
+        tgw_import_file = tgw_dir / 'import.sh'
+        tgw_import_file.write_text(tgw_import, encoding='utf-8')
+        tgw_import_file.chmod(0o755)
+        print(f"✓ Generated: {tgw_import_file}")
+
+        # Load route tables
+        tgw_rts_data = self.load_json('tgw-route-tables.json')
+
+        # Collect all attachments
+        all_attachments = self.collect_all_attachments()
+
+        # Process each route table
         for rt in tgw_rts_data.get('TransitGatewayRouteTables', []):
             rt_id = rt['TransitGatewayRouteTableId']
-            name = self.get_tag_value(rt.get('Tags', []), 'Name', rt_id)
-            key = self.sanitize_key(name)
-            rt_id_to_key[rt_id] = key
+            rt_tgw_id = rt.get('TransitGatewayId')
 
-            commands.append(f"# Route Table: {name} (key: {key})")
-            commands.append(
-                f'terraform import \'module.transit_gateway.aws_ec2_transit_gateway_route_table.this["{key}"]\' {rt_id}'
-            )
-            commands.append("")
-
-        # Import Transit Gateway VPC Attachments (for_each)
-        commands.append("echo 'Importing Transit Gateway VPC Attachments...'")
-        for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
-            if attachment.get('ResourceType') != 'vpc':
+            # Skip route tables not belonging to selected TGW
+            if self.selected_tgw_id and rt_tgw_id != self.selected_tgw_id:
                 continue
 
-            attachment_id = attachment['TransitGatewayAttachmentId']
-            name = self.get_tag_value(attachment.get('Tags', []), 'Name', attachment_id)
-            key = self.sanitize_key(name)
-            attachment_id_to_key[attachment_id] = key
+            rt_name = self.get_tag_value(rt.get('Tags'), 'Name', rt_id)
 
-            commands.append(f"# VPC Attachment: {name} (key: {key})")
-            commands.append(
-                f'terraform import \'module.transit_gateway.aws_ec2_transit_gateway_vpc_attachment.this["{key}"]\' {attachment_id}'
-            )
-            commands.append("")
+            # Create route table directory
+            rt_dirname = self.sanitize_dirname(rt_name)
+            rt_dir = self.output_dir / f'rt-{rt_dirname}'
+            rt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Import Route Table Associations (for_each)
-        commands.append("echo 'Importing Route Table Associations...'")
-        for rt_id, rt_key in rt_id_to_key.items():
+            # Collect associations
+            associations = []
             assoc_file = self.input_dir / f'tgw-rt-associations-{rt_id}.json'
-            if not assoc_file.exists():
-                continue
+            if assoc_file.exists():
+                with open(assoc_file, 'r', encoding='utf-8') as f:
+                    assoc_data = json.load(f)
+                    for assoc in assoc_data.get('Associations', []):
+                        if assoc.get('State') != 'associated':
+                            continue
+                        att_id = assoc.get('TransitGatewayAttachmentId')
+                        if att_id in all_attachments:
+                            att = all_attachments[att_id]
+                            associations.append(att['key'])
 
-            with open(assoc_file, 'r', encoding='utf-8') as f:
-                assoc_data = json.load(f)
-
-            for assoc in assoc_data.get('Associations', []):
-                if assoc.get('State') != 'associated':
-                    continue
-
-                attachment_id = assoc.get('TransitGatewayAttachmentId')
-                if attachment_id not in attachment_id_to_key:
-                    continue
-
-                attachment_key = attachment_id_to_key[attachment_id]
-                # Create a unique key for the association
-                assoc_key = f"{rt_key}_{attachment_key}"
-
-                commands.append(f"# Association: {rt_key} <-> {attachment_key} (key: {assoc_key})")
-                commands.append(
-                    f'terraform import \'module.transit_gateway.aws_ec2_transit_gateway_route_table_association.this["{assoc_key}"]\' '
-                    f'{rt_id}_{attachment_id}'
-                )
-                commands.append("")
-
-        # Import Route Table Propagations (for_each)
-        commands.append("echo 'Importing Route Table Propagations...'")
-        for rt_id, rt_key in rt_id_to_key.items():
+            # Collect propagations
+            propagations = []
             prop_file = self.input_dir / f'tgw-rt-propagations-{rt_id}.json'
-            if not prop_file.exists():
-                continue
+            if prop_file.exists():
+                with open(prop_file, 'r', encoding='utf-8') as f:
+                    prop_data = json.load(f)
+                    for prop in prop_data.get('TransitGatewayRouteTablePropagations', []):
+                        if prop.get('State') != 'enabled':
+                            continue
+                        att_id = prop.get('TransitGatewayAttachmentId')
+                        if att_id in all_attachments:
+                            att = all_attachments[att_id]
+                            propagations.append(att['key'])
 
-            with open(prop_file, 'r', encoding='utf-8') as f:
-                prop_data = json.load(f)
+            # Collect attachments for this route table
+            rt_attachments = {}
 
-            for prop in prop_data.get('TransitGatewayRouteTablePropagations', []):
-                if prop.get('State') != 'enabled':
-                    continue
+            # Add attachments from associations
+            for assoc_key in associations:
+                for att_id, att in all_attachments.items():
+                    if att['key'] == assoc_key:
+                        rt_attachments[assoc_key] = att
+                        break
 
-                attachment_id = prop.get('TransitGatewayAttachmentId')
-                if attachment_id not in attachment_id_to_key:
-                    continue
+            # Add attachments from propagations
+            for prop_key in propagations:
+                for att_id, att in all_attachments.items():
+                    if att['key'] == prop_key and prop_key not in rt_attachments:
+                        rt_attachments[prop_key] = att
+                        break
 
-                attachment_key = attachment_id_to_key[attachment_id]
-                # Create a unique key for the propagation
-                prop_key = f"{rt_key}_{attachment_key}"
+            # Collect routes
+            routes = []
+            route_file = self.input_dir / f'tgw-rt-routes-{rt_id}.json'
+            if route_file.exists():
+                with open(route_file, 'r', encoding='utf-8') as f:
+                    route_data = json.load(f)
+                    for route in route_data.get('Routes', []):
+                        if route.get('Type') != 'static':
+                            continue
+                        destination = route.get('DestinationCidrBlock', '')
+                        if not destination:
+                            continue
 
-                commands.append(f"# Propagation: {rt_key} <-> {attachment_key} (key: {prop_key})")
-                commands.append(
-                    f'terraform import \'module.transit_gateway.aws_ec2_transit_gateway_route_table_propagation.this["{prop_key}"]\' '
-                    f'{rt_id}_{attachment_id}'
-                )
-                commands.append("")
+                        dest_sanitized = destination.replace('/', '_').replace('.', '_').replace(':', '_')
+                        route_key = f'route_{dest_sanitized}'
 
-        # Import Transit Gateway Routes (for_each)
-        commands.append("echo 'Importing Transit Gateway Routes...'")
-        for rt_id, rt_key in rt_id_to_key.items():
-            routes_file = self.input_dir / f'tgw-rt-routes-{rt_id}.json'
-            if not routes_file.exists():
-                continue
+                        routes.append({
+                            'key': route_key,
+                            'destination_cidr_block': destination
+                        })
 
-            with open(routes_file, encoding='utf-8') as f:
-                routes_data = json.load(f)
+            # Generate import.sh
+            import_script = self.generate_route_table_import(
+                rt_id, rt_name, rt_attachments, associations, propagations, routes
+            )
+            import_file = rt_dir / 'import.sh'
+            import_file.write_text(import_script, encoding='utf-8')
+            import_file.chmod(0o755)
+            print(f"✓ Generated: {import_file}")
 
-            for route in routes_data.get('Routes', []):
-                # Skip propagated routes (only import static routes)
-                if route.get('Type') == 'propagated':
-                    continue
-
-                dest_cidr = route.get('DestinationCidrBlock', '')
-                if not dest_cidr:
-                    continue
-
-                # Create a unique key for the route
-                dest_sanitized = dest_cidr.replace('/', '_').replace('.', '_')
-                route_key = f"{rt_key}_{dest_sanitized}"
-
-                # Check if it's a blackhole route
-                is_blackhole = route.get('State') == 'blackhole'
-                route_type = "blackhole" if is_blackhole else "attachment"
-
-                commands.append(f"# TGW Route: {dest_cidr} in {rt_key} ({route_type}, key: {route_key})")
-                commands.append(
-                    f'terraform import \'module.transit_gateway.aws_ec2_transit_gateway_route.this["{route_key}"]\' '
-                    f'{rt_id}_{dest_cidr}'
-                )
-                commands.append("")
-
-        # Import VPC Routes (for_each)
-        commands.append("echo 'Importing VPC Routes...'")
-        for rt in route_tables_data.get('RouteTables', []):
-            rt_id = rt['RouteTableId']
-            name = self.get_tag_value(rt.get('Tags', []), 'Name', rt_id)
-            rt_key = self.sanitize_key(name)
-
-            routes = rt.get('Routes', [])
-            for route in routes:
-                # Only import routes that point to Transit Gateway
-                if 'TransitGatewayId' not in route:
-                    continue
-
-                destination = route.get('DestinationCidrBlock', route.get('DestinationIpv6CidrBlock', ''))
-                if not destination or destination == 'local':
-                    continue
-
-                dest_sanitized = destination.replace('/', '_').replace('.', '_').replace(':', '_')
-                route_key = f"{rt_key}_to_{dest_sanitized}"
-
-                commands.append(f"# VPC Route: {destination} via TGW in {name} (key: {route_key})")
-                commands.append(
-                    f'terraform import \'module.transit_gateway.aws_route.this["{route_key}"]\' {rt_id}_{destination}'
-                )
-                commands.append("")
-
-        commands.append("echo 'Import completed!'")
-        commands.append("echo 'Next steps:'")
-        commands.append("echo '  1. Run terraform plan to verify the imported state'")
-        commands.append("echo '  2. Review terraform.tfvars and adjust if needed to eliminate differences'")
-        commands.append("")
-
-        return '\n'.join(commands)
-
-    def generate_to_file(self, output_file: str) -> None:
-        """Generate import commands and save to file."""
-        commands = self.generate_import_commands()
-
-        output_path = Path(output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(commands)
-
-        # Make the script executable
-        os.chmod(output_path, 0o755)
-
-        print(f"✓ Generated import script: {output_path.absolute()}")
+        print(f"\n✓ All import scripts generated in: {self.output_dir}")
+        print("\nNext steps:")
+        print("1. cd terraform/tgw")
+        print("2. terraform init")
+        print("3. ./import.sh")
+        print("4. terraform apply")
+        print("5. For each route table:")
+        print("   cd terraform/rt-<name>")
+        print("   terraform init")
+        print("   Review and edit import.sh (especially for associations/propagations)")
+        print("   ./import.sh")
+        print("   terraform plan")
 
 
 def main():
@@ -261,7 +320,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Generate Terraform import commands for existing AWS resources'
+        description='Generate import commands for split Terraform configuration'
     )
     parser.add_argument(
         '--input-dir',
@@ -269,15 +328,43 @@ def main():
         help=f'Directory containing AWS resource JSON files (default: {DEFAULT_INPUT_DIR})'
     )
     parser.add_argument(
-        '--output',
-        default=DEFAULT_OUTPUT_FILE,
-        help=f'Output file for import commands (default: {DEFAULT_OUTPUT_FILE})'
+        '--output-dir',
+        default=DEFAULT_OUTPUT_DIR,
+        help=f'Output directory for import scripts (default: {DEFAULT_OUTPUT_DIR})'
+    )
+    parser.add_argument(
+        '--account-id',
+        default=None,
+        help='AWS Account ID (auto-detected from input path if not specified)'
+    )
+    parser.add_argument(
+        '--region',
+        default=None,
+        help='AWS Region (auto-detected from input path if not specified)'
     )
 
     args = parser.parse_args()
 
-    generator = ImportCommandGenerator(args.input_dir)
-    generator.generate_to_file(args.output)
+    # Auto-detect account and region from input directory structure
+    # Expected: ./output/{account_id}/{region}/
+    account_id = args.account_id
+    region = args.region
+
+    if not account_id or not region:
+        input_path = Path(args.input_dir)
+        parts = input_path.parts
+        if len(parts) >= 2:
+            # Check if last two parts look like account_id/region
+            potential_region = parts[-1]
+            potential_account = parts[-2]
+
+            if not region and potential_region:
+                region = potential_region
+            if not account_id and potential_account and potential_account.isdigit():
+                account_id = potential_account
+
+    generator = ImportCommandsGeneratorV2(args.input_dir, args.output_dir, account_id, region)
+    generator.generate_all_imports()
 
 
 if __name__ == '__main__':
