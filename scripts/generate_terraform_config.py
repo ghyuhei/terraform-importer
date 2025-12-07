@@ -71,11 +71,12 @@ locals {
   common_tags        = data.terraform_remote_state.tgw.outputs.tags
 
   # Reference all attachments from tgw module
-  vpc_attachment_ids        = try(data.terraform_remote_state.tgw.outputs.vpc_attachment_ids, {})
-  peering_attachment_ids    = try(data.terraform_remote_state.tgw.outputs.peering_attachment_ids, {})
-  vpn_attachment_ids        = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
-  dx_gateway_attachment_ids = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
-  connect_attachment_ids    = try(data.terraform_remote_state.tgw.outputs.connect_attachment_ids, {})
+  vpc_attachment_ids                = try(data.terraform_remote_state.tgw.outputs.vpc_attachment_ids, {})
+  peering_attachment_ids            = try(data.terraform_remote_state.tgw.outputs.peering_attachment_ids, {})
+  peering_accepter_attachment_ids   = try(data.terraform_remote_state.tgw.outputs.peering_accepter_attachment_ids, {})
+  vpn_attachment_ids                = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
+  dx_gateway_attachment_ids         = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
+  connect_attachment_ids            = try(data.terraform_remote_state.tgw.outputs.connect_attachment_ids, {})
 }
 """
 
@@ -126,7 +127,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   )
 }
 
-# Peering Attachments
+# Peering Attachments (Requester side)
 resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   for_each = local.peering_attachments
 
@@ -146,6 +147,15 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
     },
     try(each.value.tags, {})
   )
+}
+
+# Peering Accepter Attachments (Accepter side - read-only)
+# These peering attachments were created by another TGW
+# Use data source to reference them for route table associations
+data "aws_ec2_transit_gateway_attachment" "peering_accepter" {
+  for_each = local.peering_accepter_attachments
+
+  transit_gateway_attachment_id = each.value.attachment_id
 }
 
 # VPN Attachments - Use data source for existing VPN connections
@@ -202,6 +212,7 @@ resource "aws_ec2_transit_gateway_route_table_association" "this" {
   transit_gateway_attachment_id = (
     each.value.attachment_type == "vpc" ? local.vpc_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
@@ -217,6 +228,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "this" {
   transit_gateway_attachment_id = (
     each.value.attachment_type == "vpc" ? local.vpc_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
@@ -373,6 +385,7 @@ class TerraformConfigGeneratorV2:
         tgw_attachments_data = self.load_json('tgw-attachments.json')
         vpc_attachments = {}
         peering_attachments = {}
+        peering_accepter_attachments = {}
         vpn_attachments = {}
         dx_gateway_attachments = {}
         connect_attachments = {}
@@ -419,22 +432,38 @@ class TerraformConfigGeneratorV2:
                         if peer_att:
                             peering = peer_att[0]
                             requester_tgw_id = peering.get('RequesterTgwInfo', {}).get('TransitGatewayId', '')
+                            accepter_tgw_id = peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', '')
 
-                            # Only manage if this TGW is the requester (not accepter)
+                            # Check if this TGW is the requester or accepter
                             if requester_tgw_id == self.selected_tgw_id:
                                 is_requester = True
-                                peer_tgw_id = peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', '')
+                                peer_tgw_id = accepter_tgw_id
                                 peer_region = peering.get('AccepterTgwInfo', {}).get('Region', '')
                                 peer_account_id = peering.get('AccepterTgwInfo', {}).get('OwnerId', '')
+                            elif accepter_tgw_id == self.selected_tgw_id:
+                                # This is the accepter side
+                                peer_tgw_id = requester_tgw_id
+                                peer_region = peering.get('RequesterTgwInfo', {}).get('Region', '')
+                                peer_account_id = peering.get('RequesterTgwInfo', {}).get('OwnerId', '')
 
-                # Only add if this TGW is the requester
+                # Add to appropriate collection
                 if is_requester and peer_tgw_id:
+                    # Requester side: manage as resource
                     peering_attachments[key] = {
                         'name': name,
                         'peer_transit_gateway_id': peer_tgw_id,
                         'peer_region': peer_region,
                         'peer_account_id': peer_account_id,
                         'attachment_id': attachment_id
+                    }
+                elif not is_requester and peer_tgw_id:
+                    # Accepter side: reference as data source
+                    peering_accepter_attachments[key] = {
+                        'name': name,
+                        'attachment_id': attachment_id,
+                        'peer_transit_gateway_id': peer_tgw_id,
+                        'peer_region': peer_region,
+                        'peer_account_id': peer_account_id
                     }
 
             elif resource_type == 'vpn':
@@ -470,8 +499,8 @@ class TerraformConfigGeneratorV2:
         lines.append("  }")
         lines.append("")
 
-        # Add Peering Attachments
-        lines.append("  # Peering Attachments")
+        # Add Peering Attachments (Requester side - managed as resource)
+        lines.append("  # Peering Attachments (Requester side - managed as resource)")
         lines.append("  peering_attachments = {")
         for key, att in peering_attachments.items():
             lines.append(f'    {key} = {{')
@@ -480,6 +509,17 @@ class TerraformConfigGeneratorV2:
             lines.append(f'      peer_region             = "{att["peer_region"]}"')
             if att.get('peer_account_id'):
                 lines.append(f'      peer_account_id         = "{att["peer_account_id"]}"')
+            lines.append('    }')
+        lines.append("  }")
+        lines.append("")
+
+        # Add Peering Accepter Attachments (Accepter side - read-only via data source)
+        lines.append("  # Peering Accepter Attachments (Accepter side - read-only via data source)")
+        lines.append("  peering_accepter_attachments = {")
+        for key, att in peering_accepter_attachments.items():
+            lines.append(f'    {key} = {{')
+            lines.append(f'      name          = "{att["name"]}"')
+            lines.append(f'      attachment_id = "{att["attachment_id"]}"')
             lines.append('    }')
         lines.append("  }")
         lines.append("")
@@ -653,6 +693,19 @@ class TerraformConfigGeneratorV2:
                         peer_att = peer_att_detail.get('TransitGatewayPeeringAttachments', [])
                         if peer_att:
                             peering = peer_att[0]
+                            requester_tgw_id = peering.get('RequesterTgwInfo', {}).get('TransitGatewayId', '')
+
+                            # Determine if this is requester or accepter side
+                            # This will be used in route table associations
+                            peering_role = 'peering' if requester_tgw_id == attachment.get('TransitGatewayId') else 'peering_accepter'
+
+                            # Update normalized_type based on role
+                            if normalized_type == 'peering':
+                                normalized_type = peering_role
+
+                            # Update attachments dict with new type
+                            attachments[attachment_id]['type'] = normalized_type
+
                             attachments[attachment_id].update({
                                 'peer_transit_gateway_id': peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', ''),
                                 'peer_region': peering.get('AccepterTgwInfo', {}).get('Region', ''),
@@ -757,8 +810,13 @@ output "vpc_attachment_ids" {
 }
 
 output "peering_attachment_ids" {
-  description = "Map of peering attachment keys to IDs"
+  description = "Map of peering attachment keys to IDs (Requester side)"
   value       = { for k, v in aws_ec2_transit_gateway_peering_attachment.this : k => v.id }
+}
+
+output "peering_accepter_attachment_ids" {
+  description = "Map of peering accepter attachment keys to IDs (Accepter side - from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.peering_accepter : k => v.id }
 }
 
 output "vpn_attachment_ids" {
