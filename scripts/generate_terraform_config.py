@@ -94,6 +94,10 @@ resource "aws_ec2_transit_gateway" "this" {
       Name = local.transit_gateway.name
     }
   )
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 # VPC Attachments
@@ -109,7 +113,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   ipv6_support           = try(each.value.ipv6_support, "disable")
 
   lifecycle {
-    ignore_changes = [subnet_ids, appliance_mode_support, dns_support, ipv6_support]
+    ignore_changes = [subnet_ids, appliance_mode_support, dns_support, ipv6_support, tags]
   }
 
   tags = merge(
@@ -129,6 +133,10 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   peer_transit_gateway_id = each.value.peer_transit_gateway_id
   peer_region             = each.value.peer_region
   peer_account_id         = try(each.value.peer_account_id, null)
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 
   tags = merge(
     local.tags,
@@ -163,6 +171,10 @@ data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
 MAIN_TF_RT = """# Transit Gateway Route Table
 resource "aws_ec2_transit_gateway_route_table" "this" {
   transit_gateway_id = local.transit_gateway_id
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 
   tags = merge(
     local.common_tags,
