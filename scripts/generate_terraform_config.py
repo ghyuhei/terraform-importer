@@ -75,6 +75,7 @@ locals {
   peering_attachment_ids    = try(data.terraform_remote_state.tgw.outputs.peering_attachment_ids, {})
   vpn_attachment_ids        = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
   dx_gateway_attachment_ids = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
+  connect_attachment_ids    = try(data.terraform_remote_state.tgw.outputs.connect_attachment_ids, {})
 }
 """
 
@@ -166,6 +167,15 @@ data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
+
+# Connect Attachments - Use data source for existing Connect attachments (e.g., Network Firewall)
+# Connect attachments are created through aws_ec2_transit_gateway_connect
+# These cannot be imported separately
+data "aws_ec2_transit_gateway_attachment" "connect" {
+  for_each = local.connect_attachments
+
+  transit_gateway_attachment_id = each.value.attachment_id
+}
 """
 
 MAIN_TF_RT = """# Transit Gateway Route Table
@@ -194,6 +204,7 @@ resource "aws_ec2_transit_gateway_route_table_association" "this" {
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -208,6 +219,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "this" {
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -225,6 +237,7 @@ resource "aws_ec2_transit_gateway_route" "this" {
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
     null
   )
 
@@ -362,6 +375,7 @@ class TerraformConfigGeneratorV2:
         peering_attachments = {}
         vpn_attachments = {}
         dx_gateway_attachments = {}
+        connect_attachments = {}
 
         for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
             # Only include attachments for the selected TGW
@@ -396,23 +410,32 @@ class TerraformConfigGeneratorV2:
                 peer_tgw_id = ''
                 peer_region = ''
                 peer_account_id = ''
+                is_requester = False
+
                 if peer_att_file.exists():
                     with open(peer_att_file, 'r', encoding='utf-8') as f:
                         peer_att_detail = json.load(f)
                         peer_att = peer_att_detail.get('TransitGatewayPeeringAttachments', [])
                         if peer_att:
                             peering = peer_att[0]
-                            peer_tgw_id = peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', '')
-                            peer_region = peering.get('AccepterTgwInfo', {}).get('Region', '')
-                            peer_account_id = peering.get('AccepterTgwInfo', {}).get('OwnerId', '')
+                            requester_tgw_id = peering.get('RequesterTgwInfo', {}).get('TransitGatewayId', '')
 
-                peering_attachments[key] = {
-                    'name': name,
-                    'peer_transit_gateway_id': peer_tgw_id,
-                    'peer_region': peer_region,
-                    'peer_account_id': peer_account_id,
-                    'attachment_id': attachment_id
-                }
+                            # Only manage if this TGW is the requester (not accepter)
+                            if requester_tgw_id == self.selected_tgw_id:
+                                is_requester = True
+                                peer_tgw_id = peering.get('AccepterTgwInfo', {}).get('TransitGatewayId', '')
+                                peer_region = peering.get('AccepterTgwInfo', {}).get('Region', '')
+                                peer_account_id = peering.get('AccepterTgwInfo', {}).get('OwnerId', '')
+
+                # Only add if this TGW is the requester
+                if is_requester and peer_tgw_id:
+                    peering_attachments[key] = {
+                        'name': name,
+                        'peer_transit_gateway_id': peer_tgw_id,
+                        'peer_region': peer_region,
+                        'peer_account_id': peer_account_id,
+                        'attachment_id': attachment_id
+                    }
 
             elif resource_type == 'vpn':
                 vpn_attachments[key] = {
@@ -426,6 +449,13 @@ class TerraformConfigGeneratorV2:
                     'name': name,
                     'attachment_id': attachment_id,
                     'dx_gateway_id': attachment.get('ResourceId', '')
+                }
+
+            elif resource_type == 'connect':
+                connect_attachments[key] = {
+                    'name': name,
+                    'attachment_id': attachment_id,
+                    'connect_id': attachment.get('ResourceId', '')
                 }
 
         # Add VPC Attachments
@@ -476,6 +506,19 @@ class TerraformConfigGeneratorV2:
             lines.append(f'      name          = "{att["name"]}"')
             lines.append(f'      attachment_id = "{att["attachment_id"]}"')
             lines.append(f'      dx_gateway_id = "{att["dx_gateway_id"]}"')
+            lines.append('    }')
+        lines.append("  }")
+        lines.append("")
+
+        # Add Connect Attachments
+        lines.append("  # Connect Attachments (read-only via data source)")
+        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  connect_attachments = {")
+        for key, att in connect_attachments.items():
+            lines.append(f'    {key} = {{')
+            lines.append(f'      name          = "{att["name"]}"')
+            lines.append(f'      attachment_id = "{att["attachment_id"]}"')
+            lines.append(f'      connect_id    = "{att["connect_id"]}"')
             lines.append('    }')
         lines.append("  }")
         lines.append("")
@@ -570,9 +613,14 @@ class TerraformConfigGeneratorV2:
             name = self.get_tag_value(attachment.get('Tags'), 'Name', attachment_id)
             key = self.sanitize_key(name)
 
+            # Normalize resource types for Terraform compatibility
+            normalized_type = resource_type
+            if resource_type == 'direct-connect-gateway':
+                normalized_type = 'dx_gateway'
+
             attachments[attachment_id] = {
                 'key': key,
-                'type': resource_type,
+                'type': normalized_type,
                 'name': name,
                 'tags': {tag['Key']: tag['Value'] for tag in attachment.get('Tags', []) if 'Key' in tag},
                 'attachment_id': attachment_id
@@ -721,6 +769,11 @@ output "vpn_attachment_ids" {
 output "dx_gateway_attachment_ids" {
   description = "Map of DX Gateway attachment keys to attachment IDs (from data source)"
   value       = { for k, v in data.aws_ec2_transit_gateway_attachment.dx_gateway : k => v.id }
+}
+
+output "connect_attachment_ids" {
+  description = "Map of Connect attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.connect : k => v.id }
 }
 """
 
