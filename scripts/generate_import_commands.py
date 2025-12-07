@@ -94,6 +94,7 @@ class ImportCommandsGeneratorV2:
         # Import VPC Attachments
         all_attachments = self.collect_all_attachments()
         vpc_attachments = {k: v for k, v in all_attachments.items() if v['type'] == 'vpc'}
+        peering_attachments = {k: v for k, v in all_attachments.items() if v['type'] == 'peering'}
 
         if vpc_attachments:
             lines.append("echo 'Importing VPC Attachments...'")
@@ -102,18 +103,32 @@ class ImportCommandsGeneratorV2:
                 lines.append(f"terraform import 'aws_ec2_transit_gateway_vpc_attachment.this[\"{att_key}\"]' {att_id}")
             lines.append("")
 
+        if peering_attachments:
+            lines.append("echo 'Importing Peering Attachments...'")
+            for att_id, att in peering_attachments.items():
+                att_key = att['key']
+                lines.append(f"terraform import 'aws_ec2_transit_gateway_peering_attachment.this[\"{att_key}\"]' {att_id}")
+            lines.append("")
+
         lines.append("echo '✓ Import completed'")
         lines.append("")
 
         return '\n'.join(lines)
 
     def collect_all_attachments(self) -> Dict[str, Any]:
-        """Collect all attachment information indexed by attachment_id."""
+        """Collect all attachment information indexed by attachment_id.
+
+        Only collects attachments belonging to the selected TGW.
+        """
         attachments = {}
 
         tgw_attachments_data = self.load_json('tgw-attachments.json')
 
         for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
+            # Filter by selected TGW ID
+            if self.selected_tgw_id and attachment.get('TransitGatewayId') != self.selected_tgw_id:
+                continue
+
             attachment_id = attachment['TransitGatewayAttachmentId']
             resource_type = attachment.get('ResourceType', '')
             name = self.get_tag_value(attachment.get('Tags'), 'Name', attachment_id)

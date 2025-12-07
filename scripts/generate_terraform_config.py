@@ -139,32 +139,24 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   )
 }
 
-# VPN Connections
-resource "aws_vpn_connection" "this" {
+# VPN Attachments - Use data source for existing VPN connections
+# VPN attachments are automatically created when VPN connection is associated with TGW
+# These cannot be imported separately - they are managed through aws_vpn_connection
+# If you need to manage VPN connections with Terraform, create aws_vpn_connection resources separately
+data "aws_ec2_transit_gateway_attachment" "vpn" {
   for_each = local.vpn_attachments
 
-  customer_gateway_id = each.value.customer_gateway_id
-  transit_gateway_id  = aws_ec2_transit_gateway.this.id
-  type                = try(each.value.type, "ipsec.1")
-  static_routes_only  = try(each.value.static_routes_only, false)
-
-  tags = merge(
-    local.tags,
-    {
-      Name = each.value.name
-    },
-    try(each.value.tags, {})
-  )
+  transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Direct Connect Gateway Associations
-resource "aws_dx_gateway_association" "this" {
+# Direct Connect Gateway Attachments - Use data source for existing DX Gateway associations
+# DX Gateway attachments are automatically created when DX Gateway is associated with TGW
+# These cannot be imported separately - they are managed through aws_dx_gateway_association
+# If you need to manage DX Gateway associations with Terraform, create aws_dx_gateway_association resources separately
+data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
   for_each = local.dx_gateway_attachments
 
-  dx_gateway_id         = each.value.dx_gateway_id
-  associated_gateway_id = aws_ec2_transit_gateway.this.id
-
-  allowed_prefixes = try(each.value.allowed_prefixes, null)
+  transit_gateway_attachment_id = each.value.attachment_id
 }
 """
 
@@ -410,6 +402,20 @@ class TerraformConfigGeneratorV2:
                     'attachment_id': attachment_id
                 }
 
+            elif resource_type == 'vpn':
+                vpn_attachments[key] = {
+                    'name': name,
+                    'attachment_id': attachment_id,
+                    'vpn_connection_id': attachment.get('ResourceId', '')
+                }
+
+            elif resource_type == 'direct-connect-gateway':
+                dx_gateway_attachments[key] = {
+                    'name': name,
+                    'attachment_id': attachment_id,
+                    'dx_gateway_id': attachment.get('ResourceId', '')
+                }
+
         # Add VPC Attachments
         lines.append("  # VPC Attachments")
         lines.append("  vpc_attachments = {")
@@ -436,14 +442,30 @@ class TerraformConfigGeneratorV2:
         lines.append("  }")
         lines.append("")
 
-        # Add VPN Attachments (empty for now)
-        lines.append("  # VPN Attachments")
-        lines.append("  vpn_attachments = {}")
+        # Add VPN Attachments
+        lines.append("  # VPN Attachments (read-only via data source)")
+        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  vpn_attachments = {")
+        for key, att in vpn_attachments.items():
+            lines.append(f'    {key} = {{')
+            lines.append(f'      name              = "{att["name"]}"')
+            lines.append(f'      attachment_id     = "{att["attachment_id"]}"')
+            lines.append(f'      vpn_connection_id = "{att["vpn_connection_id"]}"')
+            lines.append('    }')
+        lines.append("  }")
         lines.append("")
 
-        # Add Direct Connect Gateway Attachments (empty for now)
-        lines.append("  # Direct Connect Gateway Attachments")
-        lines.append("  dx_gateway_attachments = {}")
+        # Add Direct Connect Gateway Attachments
+        lines.append("  # Direct Connect Gateway Attachments (read-only via data source)")
+        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  dx_gateway_attachments = {")
+        for key, att in dx_gateway_attachments.items():
+            lines.append(f'    {key} = {{')
+            lines.append(f'      name          = "{att["name"]}"')
+            lines.append(f'      attachment_id = "{att["attachment_id"]}"')
+            lines.append(f'      dx_gateway_id = "{att["dx_gateway_id"]}"')
+            lines.append('    }')
+        lines.append("  }")
         lines.append("")
 
         lines.append("  # Common tags")
@@ -680,13 +702,13 @@ output "peering_attachment_ids" {
 }
 
 output "vpn_attachment_ids" {
-  description = "Map of VPN attachment keys to attachment IDs"
-  value       = { for k, v in aws_vpn_connection.this : k => v.transit_gateway_attachment_id }
+  description = "Map of VPN attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.vpn : k => v.id }
 }
 
 output "dx_gateway_attachment_ids" {
-  description = "Map of DX Gateway attachment keys to attachment IDs"
-  value       = { for k, v in aws_dx_gateway_association.this : k => v.transit_gateway_attachment_id }
+  description = "Map of DX Gateway attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.dx_gateway : k => v.id }
 }
 """
 
