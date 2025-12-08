@@ -59,30 +59,22 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   )
 }
 
-# VPN Connections
-resource "aws_vpn_connection" "this" {
+# VPN Attachments - Use data source for existing VPN connections
+# VPN attachments are automatically created when VPN connection is associated with TGW
+# These cannot be imported separately - they are managed through aws_vpn_connection
+# If you need to manage VPN connections with Terraform, create aws_vpn_connection resources separately
+data "aws_ec2_transit_gateway_attachment" "vpn" {
   for_each = local.vpn_attachments
 
-  customer_gateway_id = each.value.customer_gateway_id
-  transit_gateway_id  = aws_ec2_transit_gateway.this.id
-  type                = try(each.value.type, "ipsec.1")
-  static_routes_only  = try(each.value.static_routes_only, false)
-
-  tags = merge(
-    local.tags,
-    {
-      Name = each.value.name
-    },
-    try(each.value.tags, {})
-  )
+  transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Direct Connect Gateway Associations
-resource "aws_dx_gateway_association" "this" {
+# Direct Connect Gateway Attachments - Use data source for existing DX Gateway associations
+# DX Gateway attachments are automatically created when DX Gateway is associated with TGW
+# These cannot be imported separately - they are managed through aws_dx_gateway_association
+# If you need to manage DX Gateway associations with Terraform, create aws_dx_gateway_association resources separately
+data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
   for_each = local.dx_gateway_attachments
 
-  dx_gateway_id         = each.value.dx_gateway_id
-  associated_gateway_id = aws_ec2_transit_gateway.this.id
-
-  allowed_prefixes = try(each.value.allowed_prefixes, null)
+  transit_gateway_attachment_id = each.value.attachment_id
 }

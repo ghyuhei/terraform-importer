@@ -31,11 +31,11 @@ output "peering_attachment_ids" {
 }
 
 output "vpn_attachment_ids" {
-  description = "Map of VPN attachment keys to attachment IDs"
-  value       = { for k, v in aws_vpn_connection.this : k => v.transit_gateway_attachment_id }
+  description = "Map of VPN attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.vpn : k => v.id }
 }
 
 output "dx_gateway_attachment_ids" {
-  description = "Map of DX Gateway attachment keys to attachment IDs"
-  value       = { for k, v in aws_dx_gateway_association.this : k => v.transit_gateway_attachment_id }
+  description = "Map of DX Gateway attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.dx_gateway : k => v.id }
 }
