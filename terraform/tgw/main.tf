@@ -59,20 +59,14 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   )
 }
 
-# VPN Attachments - Use data source for existing VPN connections
-# VPN attachments are automatically created when VPN connection is associated with TGW
-# These cannot be imported separately - they are managed through aws_vpn_connection
-# If you need to manage VPN connections with Terraform, create aws_vpn_connection resources separately
+# VPN Attachments (read-only)
 data "aws_ec2_transit_gateway_attachment" "vpn" {
   for_each = local.vpn_attachments
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Direct Connect Gateway Attachments - Use data source for existing DX Gateway associations
-# DX Gateway attachments are automatically created when DX Gateway is associated with TGW
-# These cannot be imported separately - they are managed through aws_dx_gateway_association
-# If you need to manage DX Gateway associations with Terraform, create aws_dx_gateway_association resources separately
+# Direct Connect Gateway Attachments (read-only)
 data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
   for_each = local.dx_gateway_attachments
 
