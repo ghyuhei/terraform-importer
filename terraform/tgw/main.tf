@@ -41,7 +41,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   )
 }
 
-# Peering Attachments
+# Peering Attachments (Requester side)
 resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   for_each = local.peering_attachments
 
@@ -57,6 +57,13 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
     },
     try(each.value.tags, {})
   )
+}
+
+# Peering Accepter Attachments (Accepter side - read-only)
+data "aws_ec2_transit_gateway_attachment" "peering_accepter" {
+  for_each = local.peering_accepter_attachments
+
+  transit_gateway_attachment_id = each.value.attachment_id
 }
 
 # VPN Attachments (read-only)

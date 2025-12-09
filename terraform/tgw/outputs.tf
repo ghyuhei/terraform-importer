@@ -26,8 +26,13 @@ output "vpc_attachment_ids" {
 }
 
 output "peering_attachment_ids" {
-  description = "Map of peering attachment keys to IDs"
+  description = "Map of peering attachment keys to IDs (Requester side)"
   value       = { for k, v in aws_ec2_transit_gateway_peering_attachment.this : k => v.id }
+}
+
+output "peering_accepter_attachment_ids" {
+  description = "Map of peering accepter attachment keys to IDs (Accepter side - from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.peering_accepter : k => v.id }
 }
 
 output "vpn_attachment_ids" {

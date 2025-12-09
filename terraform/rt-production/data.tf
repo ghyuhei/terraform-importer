@@ -26,8 +26,9 @@ locals {
   common_tags        = data.terraform_remote_state.tgw.outputs.tags
 
   # Reference all attachments from tgw module
-  vpc_attachment_ids        = try(data.terraform_remote_state.tgw.outputs.vpc_attachment_ids, {})
-  peering_attachment_ids    = try(data.terraform_remote_state.tgw.outputs.peering_attachment_ids, {})
-  vpn_attachment_ids        = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
-  dx_gateway_attachment_ids = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
+  vpc_attachment_ids              = try(data.terraform_remote_state.tgw.outputs.vpc_attachment_ids, {})
+  peering_attachment_ids          = try(data.terraform_remote_state.tgw.outputs.peering_attachment_ids, {})
+  peering_accepter_attachment_ids = try(data.terraform_remote_state.tgw.outputs.peering_accepter_attachment_ids, {})
+  vpn_attachment_ids              = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
+  dx_gateway_attachment_ids       = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
 }
