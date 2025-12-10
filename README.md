@@ -4,34 +4,38 @@ AWS Transit Gatewayの既存リソースをTerraform管理下に置くための�
 
 ## 特徴
 
+- **複数TGW対応**: 複数のTransit Gatewayを同時に管理可能
 - **ルートテーブル単位の分割管理**: 各ルートテーブルを独立したディレクトリで管理し、tfstate肥大化を防止
 - **完全自動生成**: 既存AWSリソースからTerraform設定とインポートスクリプトを自動生成
-- **全接続タイプ対応**: VPC, Peering, VPN, Direct Connect Gateway すべてサポート
+- **全接続タイプ対応**: VPC, Peering, VPN, Direct Connect Gateway, Network Function すべてサポート
 - **モジュールレス設計**: for_eachベースのシンプルな構造
 
 ## ディレクトリ構造
 
-実際のディレクトリ名は AWS 環境のルートテーブル名（Nameタグ）から自動生成されます。
+実際のディレクトリ名は AWS 環境の Transit Gateway 名とルートテーブル名（Nameタグ）から自動生成されます。
 
 ```
 terraform/
-├── tgw/                    # Transit Gateway 本体（固定）
-│   ├── main.tf            # TGW, VPC Attachments 定義
-│   ├── locals.tf          # TGW 設定 (自動生成)
-│   ├── outputs.tf         # TGW ID を output
-│   └── import.sh          # インポートスクリプト (自動生成)
+├── tgw-{name}/                      # Transit Gateway ごとのディレクトリ (自動生成)
+│   ├── main.tf                     # TGW, VPC/Peering Attachments 定義
+│   ├── locals.tf                   # TGW 設定 (自動生成)
+│   ├── outputs.tf                  # TGW ID と Attachment IDs を output
+│   ├── versions.tf                 # Terraform と Provider バージョン
+│   └── import.sh                   # インポートスクリプト (自動生成)
 │
-└── rt-{name}/              # ルートテーブルごとのディレクトリ (自動生成)
-    ├── main.tf            # Route Table, Routes, Associations 定義
-    ├── locals.tf          # 設定 (自動生成)
-    ├── data.tf            # tgw/ から TGW ID 参照
-    └── import.sh          # インポートスクリプト (自動生成)
+└── {tgw-name}-rt-{name}/           # ルートテーブルごとのディレクトリ (自動生成)
+    ├── main.tf                     # Route Table, Routes, Associations 定義
+    ├── locals.tf                   # 設定 (自動生成)
+    ├── data.tf                     # tgw-{name}/ から TGW ID 参照
+    ├── versions.tf                 # Terraform と Provider バージョン
+    └── import.sh                   # インポートスクリプト (自動生成)
 ```
 
 **設計思想:**
-- State分離: ルートテーブルごとに独立したterraform.tfstate
+- 複数TGW対応: TGWごとに独立したディレクトリで管理
+- State分離: TGWおよびルートテーブルごとに独立したterraform.tfstate
 - 爆発半径の最小化: 1つのルートテーブルの問題が他に波及しない
-- 並列作業: 複数のルートテーブルを同時に変更可能
+- 並列作業: 複数のTGWやルートテーブルを同時に変更可能
 
 ## クイックスタート
 
@@ -56,12 +60,12 @@ python3 scripts/generate_terraform_config.py
 生成されるファイル（名前は環境により異なる）:
 ```
 terraform/
-├── tgw/
+├── tgw-{name}/              # 例: tgw-multi_vpc_tgw/
 │   ├── main.tf (固定)
 │   ├── locals.tf (自動生成)
 │   ├── outputs.tf (固定)
 │   └── versions.tf (固定)
-└── rt-{name}/
+└── {tgw-name}-rt-{name}/    # 例: multi_vpc_tgw-rt-production/
     ├── main.tf (固定)
     ├── locals.tf (自動生成)
     ├── data.tf (固定)
@@ -75,20 +79,20 @@ python3 scripts/generate_import_commands.py
 ```
 
 生成されるファイル:
-- `terraform/tgw/import.sh` - TGW と VPC Attachments のインポート
-- `terraform/rt-{name}/import.sh` - Route Table, Associations, Routes のインポート
+- `terraform/tgw-{name}/import.sh` - TGW と VPC/Peering Attachments のインポート
+- `terraform/{tgw-name}-rt-{name}/import.sh` - Route Table, Associations, Routes のインポート
 
 ### 4. インポート実行
 
 ```bash
-# TGWをインポート
-cd terraform/tgw
+# TGWをインポート（各TGWディレクトリで実行）
+cd terraform/tgw-multi_vpc_tgw  # 環境により名前が異なる
 terraform init
 ./import.sh
 terraform apply
 
 # Route Tableをインポート（各ディレクトリで実行）
-cd ../rt-production  # 環境により名前が異なる
+cd ../multi_vpc_tgw-rt-production  # 環境により名前が異なる
 terraform init
 ./import.sh
 terraform apply
@@ -98,7 +102,7 @@ terraform apply
 
 ### 新しいVPC Attachmentを追加
 
-1. **tgw/locals.tf に追加**:
+1. **tgw-{name}/locals.tf に追加**:
 ```hcl
 vpc_attachments = {
   # 既存...
@@ -112,14 +116,14 @@ vpc_attachments = {
 
 2. **適用**:
 ```bash
-cd terraform/tgw
+cd terraform/tgw-multi_vpc_tgw
 terraform plan
 terraform apply
 ```
 
 ### 新しいルートを追加
 
-1. **rt-{name}/locals.tf に追加**:
+1. **{tgw-name}-rt-{name}/locals.tf に追加**:
 ```hcl
 tgw_routes = {
   # 既存...
@@ -133,14 +137,14 @@ tgw_routes = {
 
 2. **適用**:
 ```bash
-cd terraform/rt-production
+cd terraform/multi_vpc_tgw-rt-production
 terraform plan
 terraform apply
 ```
 
 ## locals.tf の構造
 
-### tgw/locals.tf (自動生成)
+### tgw-{name}/locals.tf (自動生成)
 
 ```hcl
 locals {
@@ -167,12 +171,14 @@ locals {
   }
 
   peering_attachments = {}
+  peering_accepter_attachments = {}
   vpn_attachments = {}
   dx_gateway_attachments = {}
+  network_function_attachments = {}
 }
 ```
 
-### rt-{name}/locals.tf (自動生成)
+### {tgw-name}-rt-{name}/locals.tf (自動生成)
 
 ```hcl
 locals {
@@ -219,18 +225,18 @@ VPC 内のルートテーブルに設定される Transit Gateway 向けルー�
 
 ### "Unable to find remote state" エラー
 
-**原因:** rt-{name} が参照する tgw の state が存在しない
+**原因:** {tgw-name}-rt-{name} が参照する tgw-{name} の state が存在しない
 
 **解決方法:**
 ```bash
 # tgw を先にインポート
-cd terraform/tgw
+cd terraform/tgw-multi_vpc_tgw
 terraform init
 ./import.sh
 terraform apply
 
 # その後 route table をインポート
-cd ../rt-production
+cd ../multi_vpc_tgw-rt-production
 terraform init
 ./import.sh
 ```
@@ -270,16 +276,16 @@ lifecycle {
 ```
 terraform/
 ├── account1-tokyo/         # 本番環境 (ap-northeast-1)
-│   ├── tgw/
-│   └── rt-{name}/
+│   ├── tgw-main/
+│   └── main-rt-{name}/
 │
 ├── account2-oregon/        # 検証環境 (us-west-2)
-│   ├── tgw/
-│   └── rt-{name}/
+│   ├── tgw-dev/
+│   └── dev-rt-{name}/
 │
 └── shared-tokyo/           # 共有サービス用
-    ├── tgw/
-    └── rt-{name}/
+    ├── tgw-shared/
+    └── shared-rt-{name}/
 ```
 
 ### ワークフロー
@@ -299,8 +305,8 @@ python3 scripts/generate_terraform_config.py \
   --output-dir ./terraform/account2-oregon
 
 # 3. インポート実行
-cd terraform/account1-tokyo/tgw && terraform init && ./import.sh && terraform apply
-cd ../rt-production && terraform init && ./import.sh && terraform apply
+cd terraform/account1-tokyo/tgw-main && terraform init && ./import.sh && terraform apply
+cd ../main-rt-production && terraform init && ./import.sh && terraform apply
 ```
 
 ## スクリプトオプション
