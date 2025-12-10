@@ -618,6 +618,8 @@ class TerraformConfigGeneratorV2:
             normalized_type = resource_type
             if resource_type == 'direct-connect-gateway':
                 normalized_type = 'dx_gateway'
+            elif resource_type == 'connect':
+                normalized_type = 'network_function'
 
             attachments[attachment_id] = {
                 'key': key,
