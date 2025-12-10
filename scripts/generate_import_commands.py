@@ -2,10 +2,10 @@
 """Import Commands Generator for route-table-based directory structure.
 
 Generates import.sh scripts for:
-- terraform/tgw/import.sh : Import Transit Gateway
-- terraform/rt-{name}/import.sh : Import route table and its resources
+- terraform/tgw-{name}/import.sh : Import Transit Gateway (per TGW)
+- terraform/{tgw-name}-rt-{name}/import.sh : Import route table and its resources
 
-Supports multi-account and multi-region environments.
+Supports multi-account, multi-region, and multi-TGW environments.
 
 Requirements: Python 3.8+
 """

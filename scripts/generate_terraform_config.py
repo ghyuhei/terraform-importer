@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Terraform Configuration Generator for route-table-based directory structure.
 
-Generates Terraform configuration split by route tables:
-- terraform/tgw/ : Transit Gateway resource
-- terraform/rt-{name}/ : Each route table with its attachments
+Generates Terraform configuration split by Transit Gateways and route tables:
+- terraform/tgw-{name}/ : Transit Gateway resource (per TGW)
+- terraform/{tgw-name}-rt-{name}/ : Each route table with its attachments
 
-Supports multi-account and multi-region environments.
+Supports multi-account, multi-region, and multi-TGW environments.
 
 Requirements: Python 3.8+
 """
@@ -749,7 +749,7 @@ class TerraformConfigGeneratorV2:
   # Uncomment and configure for remote state storage
   # backend "s3" {
   #   bucket = "my-terraform-state"
-  #   key    = "tgw/{account_id}/{region}/tgw/terraform.tfstate"
+  #   key    = "tgw/{account_id}/{region}/{tgw-name}/terraform.tfstate"
   #   region = "ap-northeast-1"
   # }
 }
