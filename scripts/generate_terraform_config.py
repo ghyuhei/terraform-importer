@@ -96,10 +96,6 @@ resource "aws_ec2_transit_gateway" "this" {
       Name = local.transit_gateway.name
     }
   )
-
-  lifecycle {
-    ignore_changes = [tags]
-  }
 }
 
 # VPC Attachments
@@ -115,7 +111,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
   ipv6_support           = try(each.value.ipv6_support, "disable")
 
   lifecycle {
-    ignore_changes = [subnet_ids, appliance_mode_support, dns_support, ipv6_support, tags]
+    ignore_changes = [subnet_ids, appliance_mode_support, dns_support, ipv6_support]
   }
 
   tags = merge(
@@ -136,10 +132,6 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
   peer_region             = each.value.peer_region
   peer_account_id         = try(each.value.peer_account_id, null)
 
-  lifecycle {
-    ignore_changes = [tags]
-  }
-
   tags = merge(
     local.tags,
     {
@@ -150,37 +142,27 @@ resource "aws_ec2_transit_gateway_peering_attachment" "this" {
 }
 
 # Peering Accepter Attachments (Accepter side - read-only)
-# These peering attachments were created by another TGW
-# Use data source to reference them for route table associations
 data "aws_ec2_transit_gateway_attachment" "peering_accepter" {
   for_each = local.peering_accepter_attachments
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# VPN Attachments - Use data source for existing VPN connections
-# VPN attachments are automatically created when VPN connection is associated with TGW
-# These cannot be imported separately - they are managed through aws_vpn_connection
-# If you need to manage VPN connections with Terraform, create aws_vpn_connection resources separately
+# VPN Attachments (read-only)
 data "aws_ec2_transit_gateway_attachment" "vpn" {
   for_each = local.vpn_attachments
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Direct Connect Gateway Attachments - Use data source for existing DX Gateway associations
-# DX Gateway attachments are automatically created when DX Gateway is associated with TGW
-# These cannot be imported separately - they are managed through aws_dx_gateway_association
-# If you need to manage DX Gateway associations with Terraform, create aws_dx_gateway_association resources separately
+# Direct Connect Gateway Attachments (read-only)
 data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
   for_each = local.dx_gateway_attachments
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Network Function Attachments - Use data source for existing Network Function attachments
-# Network Function attachments are created through aws_ec2_transit_gateway_connect or similar services
-# These cannot be imported separately
+# Network Function Attachments (read-only)
 data "aws_ec2_transit_gateway_attachment" "network_function" {
   for_each = local.network_function_attachments
 
@@ -191,10 +173,6 @@ data "aws_ec2_transit_gateway_attachment" "network_function" {
 MAIN_TF_RT = """# Transit Gateway Route Table
 resource "aws_ec2_transit_gateway_route_table" "this" {
   transit_gateway_id = local.transit_gateway_id
-
-  lifecycle {
-    ignore_changes = [tags]
-  }
 
   tags = merge(
     local.common_tags,
@@ -500,8 +478,8 @@ class TerraformConfigGeneratorV2:
         lines.append("  }")
         lines.append("")
 
-        # Add Peering Attachments (Requester side - managed as resource)
-        lines.append("  # Peering Attachments (Requester side - managed as resource)")
+        # Add Peering Attachments (Requester side)
+        lines.append("  # Peering Attachments (Requester side)")
         lines.append("  peering_attachments = {")
         for key, att in peering_attachments.items():
             lines.append(f'    {key} = {{')
@@ -514,8 +492,8 @@ class TerraformConfigGeneratorV2:
         lines.append("  }")
         lines.append("")
 
-        # Add Peering Accepter Attachments (Accepter side - read-only via data source)
-        lines.append("  # Peering Accepter Attachments (Accepter side - read-only via data source)")
+        # Add Peering Accepter Attachments (Accepter side)
+        lines.append("  # Peering Accepter Attachments (Accepter side)")
         lines.append("  peering_accepter_attachments = {")
         for key, att in peering_accepter_attachments.items():
             lines.append(f'    {key} = {{')
@@ -526,8 +504,7 @@ class TerraformConfigGeneratorV2:
         lines.append("")
 
         # Add VPN Attachments
-        lines.append("  # VPN Attachments (read-only via data source)")
-        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  # VPN Attachments (read-only)")
         lines.append("  vpn_attachments = {")
         for key, att in vpn_attachments.items():
             lines.append(f'    {key} = {{')
@@ -539,8 +516,7 @@ class TerraformConfigGeneratorV2:
         lines.append("")
 
         # Add Direct Connect Gateway Attachments
-        lines.append("  # Direct Connect Gateway Attachments (read-only via data source)")
-        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  # Direct Connect Gateway Attachments (read-only)")
         lines.append("  dx_gateway_attachments = {")
         for key, att in dx_gateway_attachments.items():
             lines.append(f'    {key} = {{')
@@ -552,8 +528,7 @@ class TerraformConfigGeneratorV2:
         lines.append("")
 
         # Add Network Function Attachments
-        lines.append("  # Network Function Attachments (read-only via data source)")
-        lines.append("  # These are managed outside Terraform - use data source to reference them")
+        lines.append("  # Network Function Attachments (read-only)")
         lines.append("  network_function_attachments = {")
         for key, att in network_function_attachments.items():
             lines.append(f'    {key} = {{')
