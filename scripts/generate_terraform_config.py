@@ -307,31 +307,17 @@ class TerraformConfigGeneratorV2:
             escaped = str(value).replace('"', '\\"')
             return f'"{escaped}"'
 
-    def generate_shared_locals(self) -> str:
-        """Generate shared/locals.tf content."""
-        tgws_data = self.load_json('transit-gateways.json')
-        tgws = tgws_data.get('TransitGateways', [])
+    def generate_tgw_locals(self, tgw: dict) -> str:
+        """Generate locals.tf content for a specific Transit Gateway.
 
-        if not tgws:
-            raise ValueError("No Transit Gateway found")
+        Args:
+            tgw: Transit Gateway object from AWS API
 
-        # Select TGW with custom route tables (DefaultRouteTableAssociation = disable)
-        # These are typically the ones users want to manage with Terraform
-        selected_tgw = None
-        for tgw in tgws:
-            options = tgw.get('Options', {})
-            if options.get('DefaultRouteTableAssociation') == 'disable':
-                selected_tgw = tgw
-                break
-
-        # Fallback to first TGW if none found with disable
-        if not selected_tgw:
-            selected_tgw = tgws[0]
-            if len(tgws) > 1:
-                print(f"⚠ Multiple TGWs found. Using: {selected_tgw.get('TransitGatewayId')}")
-
-        tgw = selected_tgw
-        self.selected_tgw_id = tgw['TransitGatewayId']  # Store selected TGW ID
+        Returns:
+            String content of locals.tf
+        """
+        tgw_id = tgw['TransitGatewayId']
+        self.selected_tgw_id = tgw_id  # Store selected TGW ID
         options = tgw.get('Options', {})
 
         # Use provided region or extract from TGW owner ID
@@ -722,17 +708,35 @@ class TerraformConfigGeneratorV2:
         return attachments
 
     def generate_all_configs(self) -> None:
-        """Generate all configuration files."""
-        # Generate tgw/locals.tf
-        tgw_dir = self.output_dir / 'tgw'
-        tgw_dir.mkdir(parents=True, exist_ok=True)
+        """Generate all configuration files for all Transit Gateways."""
+        # Load all Transit Gateways
+        tgws_data = self.load_json('transit-gateways.json')
+        tgws = tgws_data.get('TransitGateways', [])
 
-        tgw_locals = self.generate_shared_locals()
-        (tgw_dir / 'locals.tf').write_text(tgw_locals, encoding='utf-8')
-        print(f"✓ Generated: {tgw_dir / 'locals.tf'}")
+        if not tgws:
+            raise ValueError("No Transit Gateway found")
 
-        # Write static files for tgw directory
-        tgw_versions = """terraform {
+        print(f"Found {len(tgws)} Transit Gateway(s)")
+
+        # Process each TGW
+        for tgw in tgws:
+            tgw_id = tgw['TransitGatewayId']
+            tgw_name = self.get_tag_value(tgw.get('Tags'), 'Name', tgw_id)
+            tgw_dirname = self.sanitize_dirname(tgw_name) if tgw_name != tgw_id else tgw_id
+
+            # Create TGW directory
+            tgw_dir = self.output_dir / f'tgw-{tgw_dirname}'
+            tgw_dir.mkdir(parents=True, exist_ok=True)
+
+            print(f"\nProcessing TGW: {tgw_name} ({tgw_id})")
+
+            # Generate locals.tf for this TGW
+            tgw_locals = self.generate_tgw_locals(tgw)
+            (tgw_dir / 'locals.tf').write_text(tgw_locals, encoding='utf-8')
+            print(f"✓ Generated: {tgw_dir / 'locals.tf'}")
+
+            # Write static files for this TGW directory
+            tgw_versions = """terraform {
   required_version = ">= 1.5"
 
   required_providers {
@@ -810,150 +814,153 @@ output "network_function_attachment_ids" {
 }
 """
 
-        (tgw_dir / 'versions.tf').write_text(tgw_versions, encoding='utf-8')
-        (tgw_dir / 'main.tf').write_text(tgw_main, encoding='utf-8')
-        (tgw_dir / 'outputs.tf').write_text(tgw_outputs, encoding='utf-8')
-        print(f"✓ Generated: {tgw_dir / 'versions.tf'}")
-        print(f"✓ Generated: {tgw_dir / 'main.tf'}")
-        print(f"✓ Generated: {tgw_dir / 'outputs.tf'}")
+            (tgw_dir / 'versions.tf').write_text(tgw_versions, encoding='utf-8')
+            (tgw_dir / 'main.tf').write_text(tgw_main, encoding='utf-8')
+            (tgw_dir / 'outputs.tf').write_text(tgw_outputs, encoding='utf-8')
+            print(f"✓ Generated: {tgw_dir / 'versions.tf'}")
+            print(f"✓ Generated: {tgw_dir / 'main.tf'}")
+            print(f"✓ Generated: {tgw_dir / 'outputs.tf'}")
 
-        # Load route tables
-        tgw_rts_data = self.load_json('tgw-route-tables.json')
-        route_tables_data = self.load_json('route-tables.json')
+            # Load route tables
+            tgw_rts_data = self.load_json('tgw-route-tables.json')
 
-        # Collect all attachments
-        all_attachments = self.collect_all_attachments()
+            # Collect all attachments for this TGW
+            all_attachments = self.collect_all_attachments()
 
-        # Process each route table
-        for rt in tgw_rts_data.get('TransitGatewayRouteTables', []):
-            rt_id = rt['TransitGatewayRouteTableId']
-            rt_tgw_id = rt.get('TransitGatewayId')
+            # Process each route table belonging to this TGW
+            for rt in tgw_rts_data.get('TransitGatewayRouteTables', []):
+                rt_id = rt['TransitGatewayRouteTableId']
+                rt_tgw_id = rt.get('TransitGatewayId')
 
-            # Skip route tables not belonging to selected TGW
-            if self.selected_tgw_id and rt_tgw_id != self.selected_tgw_id:
-                continue
+                # Skip route tables not belonging to this TGW
+                if rt_tgw_id != tgw_id:
+                    continue
 
-            rt_name = self.get_tag_value(rt.get('Tags'), 'Name', rt_id)
-            rt_tags = {tag['Key']: tag['Value'] for tag in rt.get('Tags', []) if 'Key' in tag}
+                rt_name = self.get_tag_value(rt.get('Tags'), 'Name', rt_id)
+                rt_tags = {tag['Key']: tag['Value'] for tag in rt.get('Tags', []) if 'Key' in tag}
 
-            # Create route table directory
-            rt_dirname = self.sanitize_dirname(rt_name)
-            rt_dir = self.output_dir / f'rt-{rt_dirname}'
-            rt_dir.mkdir(parents=True, exist_ok=True)
+                # Create route table directory
+                rt_dirname = self.sanitize_dirname(rt_name)
+                rt_dir = self.output_dir / f'{tgw_dirname}-rt-{rt_dirname}'
+                rt_dir.mkdir(parents=True, exist_ok=True)
 
-            # Write static files
-            (rt_dir / 'versions.tf').write_text(VERSIONS_TF, encoding='utf-8')
-            (rt_dir / 'data.tf').write_text(DATA_TF, encoding='utf-8')
-            (rt_dir / 'main.tf').write_text(MAIN_TF_RT, encoding='utf-8')
+                # Update DATA_TF to reference the correct TGW directory
+                data_tf_content = DATA_TF.replace('../tgw/', f'../tgw-{tgw_dirname}/')
 
-            # Collect associations
-            associations = []
-            assoc_file = self.input_dir / f'tgw-rt-associations-{rt_id}.json'
-            if assoc_file.exists():
-                with open(assoc_file, 'r', encoding='utf-8') as f:
-                    assoc_data = json.load(f)
-                    for assoc in assoc_data.get('Associations', []):
-                        if assoc.get('State') != 'associated':
-                            continue
-                        att_id = assoc.get('TransitGatewayAttachmentId')
-                        if att_id in all_attachments:
-                            att = all_attachments[att_id]
-                            associations.append((att['key'], att['key'], att['type']))
+                # Write static files
+                (rt_dir / 'versions.tf').write_text(VERSIONS_TF, encoding='utf-8')
+                (rt_dir / 'data.tf').write_text(data_tf_content, encoding='utf-8')
+                (rt_dir / 'main.tf').write_text(MAIN_TF_RT, encoding='utf-8')
 
-            # Collect propagations
-            propagations = []
-            prop_file = self.input_dir / f'tgw-rt-propagations-{rt_id}.json'
-            if prop_file.exists():
-                with open(prop_file, 'r', encoding='utf-8') as f:
-                    prop_data = json.load(f)
-                    for prop in prop_data.get('TransitGatewayRouteTablePropagations', []):
-                        if prop.get('State') != 'enabled':
-                            continue
-                        att_id = prop.get('TransitGatewayAttachmentId')
-                        if att_id in all_attachments:
-                            att = all_attachments[att_id]
-                            propagations.append((att['key'], att['key'], att['type']))
+                # Collect associations
+                associations = []
+                assoc_file = self.input_dir / f'tgw-rt-associations-{rt_id}.json'
+                if assoc_file.exists():
+                    with open(assoc_file, 'r', encoding='utf-8') as f:
+                        assoc_data = json.load(f)
+                        for assoc in assoc_data.get('Associations', []):
+                            if assoc.get('State') != 'associated':
+                                continue
+                            att_id = assoc.get('TransitGatewayAttachmentId')
+                            if att_id in all_attachments:
+                                att = all_attachments[att_id]
+                                associations.append((att['key'], att['key'], att['type']))
 
-            # Collect routes
-            routes = []
-            routes_file = self.input_dir / f'tgw-rt-routes-{rt_id}.json'
-            if routes_file.exists():
-                with open(routes_file, encoding='utf-8') as f:
-                    routes_data = json.load(f)
-                    for route in routes_data.get('Routes', []):
-                        if route.get('Type') == 'propagated':
-                            continue
-                        dest_cidr = route.get('DestinationCidrBlock', '')
-                        if not dest_cidr:
-                            continue
+                # Collect propagations
+                propagations = []
+                prop_file = self.input_dir / f'tgw-rt-propagations-{rt_id}.json'
+                if prop_file.exists():
+                    with open(prop_file, 'r', encoding='utf-8') as f:
+                        prop_data = json.load(f)
+                        for prop in prop_data.get('TransitGatewayRouteTablePropagations', []):
+                            if prop.get('State') != 'enabled':
+                                continue
+                            att_id = prop.get('TransitGatewayAttachmentId')
+                            if att_id in all_attachments:
+                                att = all_attachments[att_id]
+                                propagations.append((att['key'], att['key'], att['type']))
 
-                        dest_sanitized = dest_cidr.replace('/', '_').replace('.', '_').replace(':', '_')
-                        route_key = f'route_{dest_sanitized}'
+                # Collect routes
+                routes = []
+                routes_file = self.input_dir / f'tgw-rt-routes-{rt_id}.json'
+                if routes_file.exists():
+                    with open(routes_file, encoding='utf-8') as f:
+                        routes_data = json.load(f)
+                        for route in routes_data.get('Routes', []):
+                            if route.get('Type') == 'propagated':
+                                continue
+                            dest_cidr = route.get('DestinationCidrBlock', '')
+                            if not dest_cidr:
+                                continue
 
-                        is_blackhole = route.get('State') == 'blackhole'
+                            dest_sanitized = dest_cidr.replace('/', '_').replace('.', '_').replace(':', '_')
+                            route_key = f'route_{dest_sanitized}'
 
-                        route_entry = {
-                            'key': route_key,
-                            'destination_cidr_block': dest_cidr,
-                            'blackhole': is_blackhole
-                        }
+                            is_blackhole = route.get('State') == 'blackhole'
 
-                        if not is_blackhole:
-                            # Find attachment
-                            for att_info in route.get('TransitGatewayAttachments', []):
-                                att_id = att_info.get('TransitGatewayAttachmentId')
-                                if att_id in all_attachments:
-                                    att = all_attachments[att_id]
-                                    route_entry['attachment_key'] = att['key']
-                                    route_entry['attachment_type'] = att['type']
-                                    break
+                            route_entry = {
+                                'key': route_key,
+                                'destination_cidr_block': dest_cidr,
+                                'blackhole': is_blackhole
+                            }
 
-                        routes.append(route_entry)
+                            if not is_blackhole:
+                                # Find attachment
+                                for att_info in route.get('TransitGatewayAttachments', []):
+                                    att_id = att_info.get('TransitGatewayAttachmentId')
+                                    if att_id in all_attachments:
+                                        att = all_attachments[att_id]
+                                        route_entry['attachment_key'] = att['key']
+                                        route_entry['attachment_type'] = att['type']
+                                        break
 
-            # Collect attachments for this route table
-            rt_attachments = {}
+                            routes.append(route_entry)
 
-            # Add attachments from associations
-            for assoc_key, att_key, att_type in associations:
-                for att_id, att in all_attachments.items():
-                    if att['key'] == att_key:
-                        rt_attachments[att_key] = att
-                        break
+                # Collect attachments for this route table
+                rt_attachments = {}
 
-            # Add attachments from propagations
-            for prop_key, att_key, att_type in propagations:
-                for att_id, att in all_attachments.items():
-                    if att['key'] == att_key and att_key not in rt_attachments:
-                        rt_attachments[att_key] = att
-                        break
+                # Add attachments from associations
+                for assoc_key, att_key, att_type in associations:
+                    for att_id, att in all_attachments.items():
+                        if att['key'] == att_key:
+                            rt_attachments[att_key] = att
+                            break
 
-            # Add attachments from routes
-            for route in routes:
-                if 'attachment_key' in route:
-                    att_key = route['attachment_key']
+                # Add attachments from propagations
+                for prop_key, att_key, att_type in propagations:
                     for att_id, att in all_attachments.items():
                         if att['key'] == att_key and att_key not in rt_attachments:
                             rt_attachments[att_key] = att
                             break
 
-            # Generate locals.tf
-            locals_content = self.generate_route_table_locals(
-                rt_id, rt_name, rt_tags,
-                rt_attachments,
-                associations, propagations,
-                routes
-            )
-            (rt_dir / 'locals.tf').write_text(locals_content, encoding='utf-8')
-            print(f"✓ Generated: {rt_dir / 'locals.tf'}")
+                # Add attachments from routes
+                for route in routes:
+                    if 'attachment_key' in route:
+                        att_key = route['attachment_key']
+                        for att_id, att in all_attachments.items():
+                            if att['key'] == att_key and att_key not in rt_attachments:
+                                rt_attachments[att_key] = att
+                                break
+
+                # Generate locals.tf
+                locals_content = self.generate_route_table_locals(
+                    rt_id, rt_name, rt_tags,
+                    rt_attachments,
+                    associations, propagations,
+                    routes
+                )
+                (rt_dir / 'locals.tf').write_text(locals_content, encoding='utf-8')
+                print(f"✓ Generated: {rt_dir / 'locals.tf'}")
 
         print(f"\n✓ All configurations generated in: {self.output_dir}")
         print("\nNext steps:")
         print("1. Review and adjust the generated configurations")
-        print("2. cd terraform/tgw && terraform init")
-        print("3. terraform import aws_ec2_transit_gateway.this <tgw-id>")
-        print("4. terraform apply")
-        print("5. For each route table directory:")
-        print("   cd terraform/rt-<name> && terraform init")
+        print("2. For each TGW:")
+        print("   cd terraform/tgw-<name> && terraform init")
+        print("   terraform import aws_ec2_transit_gateway.this <tgw-id>")
+        print("   terraform apply")
+        print("3. For each route table directory:")
+        print("   cd terraform/<tgw-name>-rt-<name> && terraform init")
         print("   Run appropriate import commands")
         print("   terraform plan && terraform apply")
 
