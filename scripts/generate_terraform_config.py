@@ -76,7 +76,7 @@ locals {
   peering_accepter_attachment_ids   = try(data.terraform_remote_state.tgw.outputs.peering_accepter_attachment_ids, {})
   vpn_attachment_ids                = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
   dx_gateway_attachment_ids         = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
-  connect_attachment_ids            = try(data.terraform_remote_state.tgw.outputs.connect_attachment_ids, {})
+  network_function_attachment_ids   = try(data.terraform_remote_state.tgw.outputs.network_function_attachment_ids, {})
 }
 """
 
@@ -178,11 +178,11 @@ data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
   transit_gateway_attachment_id = each.value.attachment_id
 }
 
-# Connect Attachments - Use data source for existing Connect attachments (e.g., Network Firewall)
-# Connect attachments are created through aws_ec2_transit_gateway_connect
+# Network Function Attachments - Use data source for existing Network Function attachments
+# Network Function attachments are created through aws_ec2_transit_gateway_connect or similar services
 # These cannot be imported separately
-data "aws_ec2_transit_gateway_attachment" "connect" {
-  for_each = local.connect_attachments
+data "aws_ec2_transit_gateway_attachment" "network_function" {
+  for_each = local.network_function_attachments
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
@@ -215,7 +215,7 @@ resource "aws_ec2_transit_gateway_route_table_association" "this" {
     each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
-    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -231,7 +231,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "this" {
     each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
-    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -247,9 +247,10 @@ resource "aws_ec2_transit_gateway_route" "this" {
   transit_gateway_attachment_id = try(each.value.blackhole, false) ? null : (
     each.value.attachment_type == "vpc" ? local.vpc_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "peering" ? local.peering_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
-    each.value.attachment_type == "connect" ? local.connect_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
 
@@ -388,7 +389,7 @@ class TerraformConfigGeneratorV2:
         peering_accepter_attachments = {}
         vpn_attachments = {}
         dx_gateway_attachments = {}
-        connect_attachments = {}
+        network_function_attachments = {}
 
         for attachment in tgw_attachments_data.get('TransitGatewayAttachments', []):
             # Only include attachments for the selected TGW
@@ -481,10 +482,10 @@ class TerraformConfigGeneratorV2:
                 }
 
             elif resource_type == 'connect':
-                connect_attachments[key] = {
+                network_function_attachments[key] = {
                     'name': name,
                     'attachment_id': attachment_id,
-                    'connect_id': attachment.get('ResourceId', '')
+                    'resource_id': attachment.get('ResourceId', '')
                 }
 
         # Add VPC Attachments
@@ -550,15 +551,14 @@ class TerraformConfigGeneratorV2:
         lines.append("  }")
         lines.append("")
 
-        # Add Connect Attachments
-        lines.append("  # Connect Attachments (read-only via data source)")
+        # Add Network Function Attachments
+        lines.append("  # Network Function Attachments (read-only via data source)")
         lines.append("  # These are managed outside Terraform - use data source to reference them")
-        lines.append("  connect_attachments = {")
-        for key, att in connect_attachments.items():
+        lines.append("  network_function_attachments = {")
+        for key, att in network_function_attachments.items():
             lines.append(f'    {key} = {{')
             lines.append(f'      name          = "{att["name"]}"')
             lines.append(f'      attachment_id = "{att["attachment_id"]}"')
-            lines.append(f'      connect_id    = "{att["connect_id"]}"')
             lines.append('    }')
         lines.append("  }")
         lines.append("")
@@ -829,9 +829,9 @@ output "dx_gateway_attachment_ids" {
   value       = { for k, v in data.aws_ec2_transit_gateway_attachment.dx_gateway : k => v.id }
 }
 
-output "connect_attachment_ids" {
-  description = "Map of Connect attachment keys to attachment IDs (from data source)"
-  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.connect : k => v.id }
+output "network_function_attachment_ids" {
+  description = "Map of Network Function attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.network_function : k => v.id }
 }
 """
 
