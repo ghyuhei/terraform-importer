@@ -21,6 +21,7 @@ resource "aws_ec2_transit_gateway_route_table_association" "this" {
     each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -36,6 +37,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "this" {
     each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
   transit_gateway_route_table_id = aws_ec2_transit_gateway_route_table.this.id
@@ -54,6 +56,7 @@ resource "aws_ec2_transit_gateway_route" "this" {
     each.value.attachment_type == "peering_accepter" ? local.peering_accepter_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "vpn" ? local.vpn_attachment_ids[each.value.attachment_key] :
     each.value.attachment_type == "dx_gateway" ? local.dx_gateway_attachment_ids[each.value.attachment_key] :
+    each.value.attachment_type == "network_function" ? local.network_function_attachment_ids[each.value.attachment_key] :
     null
   )
 

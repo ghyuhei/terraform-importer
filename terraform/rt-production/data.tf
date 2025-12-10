@@ -31,4 +31,5 @@ locals {
   peering_accepter_attachment_ids = try(data.terraform_remote_state.tgw.outputs.peering_accepter_attachment_ids, {})
   vpn_attachment_ids              = try(data.terraform_remote_state.tgw.outputs.vpn_attachment_ids, {})
   dx_gateway_attachment_ids       = try(data.terraform_remote_state.tgw.outputs.dx_gateway_attachment_ids, {})
+  network_function_attachment_ids = try(data.terraform_remote_state.tgw.outputs.network_function_attachment_ids, {})
 }

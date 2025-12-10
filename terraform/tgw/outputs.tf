@@ -44,3 +44,8 @@ output "dx_gateway_attachment_ids" {
   description = "Map of DX Gateway attachment keys to attachment IDs (from data source)"
   value       = { for k, v in data.aws_ec2_transit_gateway_attachment.dx_gateway : k => v.id }
 }
+
+output "network_function_attachment_ids" {
+  description = "Map of Network Function attachment keys to attachment IDs (from data source)"
+  value       = { for k, v in data.aws_ec2_transit_gateway_attachment.network_function : k => v.id }
+}

@@ -79,3 +79,10 @@ data "aws_ec2_transit_gateway_attachment" "dx_gateway" {
 
   transit_gateway_attachment_id = each.value.attachment_id
 }
+
+# Network Function Attachments (read-only)
+data "aws_ec2_transit_gateway_attachment" "network_function" {
+  for_each = local.network_function_attachments
+
+  transit_gateway_attachment_id = each.value.attachment_id
+}
