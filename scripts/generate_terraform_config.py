@@ -759,9 +759,9 @@ provider "aws" {
 }
 """
 
-        tgw_main = MAIN_TF_TGW
+            tgw_main = MAIN_TF_TGW
 
-        tgw_outputs = """# Output Transit Gateway ID and attachment IDs for use by route table directories
+            tgw_outputs = """# Output Transit Gateway ID and attachment IDs for use by route table directories
 output "transit_gateway_id" {
   description = "Transit Gateway ID"
   value       = aws_ec2_transit_gateway.this.id
